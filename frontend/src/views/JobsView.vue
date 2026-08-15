@@ -59,24 +59,6 @@
           <el-descriptions-item label="进度">{{ selectedJob.completed_servers }}/{{ selectedJob.total_servers }}</el-descriptions-item>
         </el-descriptions>
 
-        <h4 style="margin: 16px 0 8px">服务器任务</h4>
-        <el-table empty-text="暂无数据" :data="selectedJob.server_tasks || []" stripe size="small">
-          <el-table-column prop="hostname" label="主机名" width="150" />
-          <el-table-column prop="ip" label="IP" width="130" />
-          <el-table-column prop="status" label="状态" width="80">
-            <template #default="{ row }"><el-tag :type="statusColor(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template>
-          </el-table-column>
-          <el-table-column label="执行日志" min-width="400">
-            <template #default="{ row }">
-              <div v-for="log in (row.step_logs || [])" :key="log.id" class="log-entry" @click.stop="openLogDrawer(row, log)">
-                <el-tag :type="log.status === 'success' ? 'success' : 'danger'" size="small">{{ log.phase }}</el-tag>
-                <span v-if="log.script_name" class="log-script-name">{{ log.script_name }}</span>
-                <pre class="log-output">{{ log.output || log.error || '(无输出)' }}</pre>
-              </div>
-            </template>
-          </el-table-column>
-        </el-table>
-
         <h4 style="margin: 16px 0 8px">完成度矩阵</h4>
         <el-table empty-text="暂无数据" :data="completionMatrix" stripe size="small" v-if="completionMatrix.length > 0">
           <el-table-column prop="hostname" label="服务器" width="150" />
@@ -97,6 +79,24 @@
           </el-table-column>
         </el-table>
         <el-empty v-else description="暂无完成度数据" :image-size="60" />
+
+        <h4 style="margin: 16px 0 8px">服务器任务</h4>
+        <el-table empty-text="暂无数据" :data="selectedJob.server_tasks || []" stripe size="small">
+          <el-table-column prop="hostname" label="主机名" width="150" />
+          <el-table-column prop="ip" label="IP" width="130" />
+          <el-table-column prop="status" label="状态" width="80">
+            <template #default="{ row }"><el-tag :type="statusColor(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="执行日志" min-width="400">
+            <template #default="{ row }">
+              <div v-for="log in (row.step_logs || [])" :key="log.id" class="log-entry" @click.stop="openLogDrawer(row, log)">
+                <el-tag :type="log.status === 'success' ? 'success' : 'danger'" size="small">{{ log.phase }}</el-tag>
+                <span v-if="log.script_name" class="log-script-name">{{ log.script_name }}</span>
+                <pre class="log-output">{{ log.output || log.error || '(无输出)' }}</pre>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
         </template>
       </el-dialog>
 
