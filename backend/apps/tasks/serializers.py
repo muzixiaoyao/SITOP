@@ -81,7 +81,7 @@ class InitJobSerializer(serializers.ModelSerializer):
     template_name = serializers.CharField(source="template.name", read_only=True, default=None)
     group_name = serializers.CharField(source="group.name", read_only=True)
     server_tasks = JobServerTaskSerializer(many=True, read_only=True)
-    total_servers = serializers.IntegerField(source="server_tasks.count", read_only=True)
+    total_servers = serializers.SerializerMethodField()
     completed_servers = serializers.SerializerMethodField()
 
     class Meta:
@@ -93,14 +93,19 @@ class InitJobSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "status", "current_phase", "summary", "start_time", "end_time", "created_at"]
 
+    def get_total_servers(self, obj):
+        v = getattr(obj, "total_servers", None)
+        return v if isinstance(v, int) else obj.server_tasks.count()
+
     def get_completed_servers(self, obj):
-        return obj.server_tasks.filter(status__in=["success", "failed", "skipped"]).count()
+        v = getattr(obj, "completed_servers", None)
+        return v if isinstance(v, int) else obj.server_tasks.filter(status__in=["success", "failed", "skipped"]).count()
 
 
 class InitJobListSerializer(serializers.ModelSerializer):
     template_name = serializers.CharField(source="template.name", read_only=True, default=None)
     group_name = serializers.CharField(source="group.name", read_only=True)
-    total_servers = serializers.IntegerField(source="server_tasks.count", read_only=True)
+    total_servers = serializers.SerializerMethodField()
     completed_servers = serializers.SerializerMethodField()
 
     class Meta:
@@ -110,5 +115,10 @@ class InitJobListSerializer(serializers.ModelSerializer):
             "total_servers", "completed_servers", "start_time", "end_time", "created_at",
         ]
 
+    def get_total_servers(self, obj):
+        v = getattr(obj, "total_servers", None)
+        return v if isinstance(v, int) else obj.server_tasks.count()
+
     def get_completed_servers(self, obj):
-        return obj.server_tasks.filter(status__in=["success", "failed", "skipped"]).count()
+        v = getattr(obj, "completed_servers", None)
+        return v if isinstance(v, int) else obj.server_tasks.filter(status__in=["success", "failed", "skipped"]).count()

@@ -201,7 +201,7 @@ class ServerBatchGroupSerializer(ServerBatchOperationSerializer):
 
 
 class ServerGroupSerializer(serializers.ModelSerializer):
-    server_count = serializers.IntegerField(source="servers.count", read_only=True)
+    server_count = serializers.SerializerMethodField()
     servers = ServerSerializer(many=True, read_only=True)
 
     class Meta:
@@ -213,9 +213,13 @@ class ServerGroupSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def get_server_count(self, obj):
+        v = getattr(obj, "server_count", None)
+        return v if isinstance(v, int) else obj.servers.count()
+
 
 class ServerGroupListSerializer(serializers.ModelSerializer):
-    server_count = serializers.IntegerField(source="servers.count", read_only=True)
+    server_count = serializers.SerializerMethodField()
 
     class Meta:
         model = ServerGroup
@@ -224,3 +228,7 @@ class ServerGroupListSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_server_count(self, obj):
+        v = getattr(obj, "server_count", None)
+        return v if isinstance(v, int) else obj.servers.count()

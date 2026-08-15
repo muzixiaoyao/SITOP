@@ -69,7 +69,7 @@ class InitJob(models.Model):
     template = models.ForeignKey(InitTemplate, on_delete=models.SET_NULL, null=True, related_name="jobs")
     group = models.ForeignKey(ServerGroup, on_delete=models.CASCADE, related_name="jobs")
     triggered_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="+")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True)
     current_phase = models.CharField(
         max_length=20,
         choices=[
@@ -87,6 +87,10 @@ class InitJob(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "-created_at"]),
+            models.Index(fields=["tenant", "status"]),
+        ]
 
     def __str__(self):
         return f"Job {self.id} ({self.status})"
@@ -106,7 +110,7 @@ class JobServerTask(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     job = models.ForeignKey(InitJob, on_delete=models.CASCADE, related_name="server_tasks")
     server = models.ForeignKey(Server, on_delete=models.CASCADE, related_name="tasks")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending", db_index=True)
     current_step = models.PositiveIntegerField(default=0)
     connectivity_result = models.JSONField(default=dict, blank=True)
     health_result = models.JSONField(default=dict, blank=True)
@@ -117,6 +121,9 @@ class JobServerTask(models.Model):
 
     class Meta:
         ordering = ["server__hostname"]
+        indexes = [
+            models.Index(fields=["job", "status"]),
+        ]
 
     def __str__(self):
         return f"{self.job.id} - {self.server.hostname} ({self.status})"
@@ -138,6 +145,9 @@ class TaskStepLog(models.Model):
 
     class Meta:
         ordering = ["started_at"]
+        indexes = [
+            models.Index(fields=["server_task", "phase"]),
+        ]
 
     def __str__(self):
         return f"Log {self.phase} step={self.step_order} ({self.status})"

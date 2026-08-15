@@ -42,7 +42,7 @@ class ServerGroup(models.Model):
 class Server(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     groups = models.ManyToManyField(ServerGroup, related_name="servers", blank=True)
-    hostname = models.CharField(max_length=255)
+    hostname = models.CharField(max_length=255, db_index=True)
     ip = models.GenericIPAddressField(unique=True)
     ssh_port = models.PositiveIntegerField(default=22)
     
@@ -91,6 +91,7 @@ class Server(models.Model):
         max_length=20,
         choices=[("unknown", "未知"), ("success", "连通"), ("failed", "失败")],
         default="unknown",
+        db_index=True,
     )
     last_check_time = models.DateTimeField(null=True, blank=True)
     

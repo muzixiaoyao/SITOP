@@ -1,4 +1,5 @@
 from django.http import HttpResponse
+from django.db.models import Count, Prefetch
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -28,7 +29,9 @@ class ServerGroupListView(generics.ListCreateAPIView):
         return ServerGroupSerializer
 
     def get_queryset(self):
-        return ServerGroup.objects.filter(tenant=get_tenant(self.request))
+        return ServerGroup.objects.filter(tenant=get_tenant(self.request)).annotate(
+            server_count=Count("servers", distinct=True)
+        )
 
     def perform_create(self, serializer):
         serializer.save(tenant=get_tenant(self.request), created_by=self.request.user)
@@ -39,7 +42,11 @@ class ServerGroupDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated, WriteRequiresOperator]
 
     def get_queryset(self):
-        return ServerGroup.objects.filter(tenant=get_tenant(self.request))
+        return ServerGroup.objects.filter(tenant=get_tenant(self.request)).annotate(
+            server_count=Count("servers", distinct=True)
+        ).prefetch_related(
+            Prefetch("servers", queryset=Server.objects.prefetch_related("groups"))
+        )
 
     def perform_destroy(self, instance):
         from .models import DEFAULT_GROUP_NAME, get_or_create_default_group
@@ -64,7 +71,7 @@ class ServerListView(generics.ListAPIView):
         group_id = self.kwargs["group_pk"]
         return Server.objects.filter(
             groups__id=group_id, groups__tenant=get_tenant(self.request),
-        ).distinct()
+        ).distinct().prefetch_related("groups")
 
 
 class ServerAllView(generics.ListAPIView):
@@ -74,7 +81,7 @@ class ServerAllView(generics.ListAPIView):
 
     def get_queryset(self):
         tenant = get_tenant(self.request)
-        return Server.objects.filter(groups__tenant=tenant).distinct()
+        return Server.objects.filter(groups__tenant=tenant).distinct().prefetch_related("groups")
 
 
 class ServerBatchCreateView(APIView):
@@ -134,7 +141,7 @@ class ServerDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated, WriteRequiresOperator]
 
     def get_queryset(self):
-        return Server.objects.filter(groups__tenant=get_tenant(self.request)).distinct()
+        return Server.objects.filter(groups__tenant=get_tenant(self.request)).distinct().prefetch_related("groups")
 
 
 class GroupPatrolView(APIView):

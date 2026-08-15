@@ -1,4 +1,5 @@
 import logging
+from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
@@ -23,6 +24,19 @@ def get_tenant(request):
     return getattr(request, "tenant", None) or getattr(request.user, "tenant", None)
 
 
+DONE_STATUSES = ["success", "failed", "skipped"]
+
+
+def annotate_job_counts(qs):
+    """Annotate total/completed server counts to avoid per-row COUNT queries."""
+    return qs.annotate(
+        total_servers=Count("server_tasks", distinct=True),
+        completed_servers=Count(
+            "server_tasks", filter=Q(server_tasks__status__in=DONE_STATUSES), distinct=True
+        ),
+    )
+
+
 class TemplateListView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated, WriteRequiresOperator]
 
@@ -32,7 +46,11 @@ class TemplateListView(generics.ListCreateAPIView):
         return InitTemplateSerializer
 
     def get_queryset(self):
-        return InitTemplate.objects.filter(tenant=get_tenant(self.request))
+        return (
+            InitTemplate.objects.filter(tenant=get_tenant(self.request))
+            .select_related("health_check_script", "completion_check_script")
+            .prefetch_related("steps__script")
+        )
 
     def perform_create(self, serializer):
         serializer.save(tenant=get_tenant(self.request), created_by=self.request.user)
@@ -47,7 +65,11 @@ class TemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
         return InitTemplateSerializer
 
     def get_queryset(self):
-        return InitTemplate.objects.filter(tenant=get_tenant(self.request))
+        return (
+            InitTemplate.objects.filter(tenant=get_tenant(self.request))
+            .select_related("health_check_script", "completion_check_script")
+            .prefetch_related("steps__script")
+        )
 
 
 class JobListView(generics.ListCreateAPIView):
@@ -60,7 +82,9 @@ class JobListView(generics.ListCreateAPIView):
         return InitJobListSerializer
 
     def get_queryset(self):
-        return InitJob.objects.filter(tenant=get_tenant(self.request))
+        return annotate_job_counts(
+            InitJob.objects.filter(tenant=get_tenant(self.request))
+        ).select_related("template", "group")
 
     def create(self, request, *args, **kwargs):
         """Create a job and dispatch it to the task queue."""
@@ -104,7 +128,11 @@ class JobDetailView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return InitJob.objects.filter(tenant=get_tenant(self.request))
+        return annotate_job_counts(
+            InitJob.objects.filter(tenant=get_tenant(self.request))
+        ).select_related("template", "group").prefetch_related(
+            "server_tasks__server", "server_tasks__step_logs"
+        )
 
 
 class JobCancelView(APIView):
