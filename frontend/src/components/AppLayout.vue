@@ -15,6 +15,10 @@
         </el-menu>
       </div>
       <div class="header-right">
+        <a href="/docs/index.html" target="_blank" class="guide-link" title="用户指南">
+          <el-icon><question-filled /></el-icon>
+          <span>用户指南</span>
+        </a>
         <el-tag>{{ auth.tenantName }}</el-tag>
         <el-tag v-if="roleLabel" type="info" effect="plain">{{ roleLabel }}</el-tag>
         <el-dropdown @command="handleCommand">
@@ -34,6 +38,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -64,4 +69,10 @@ function handleCommand(command: string) {
 .nav-menu { border-bottom: none !important; }
 .header-right { display: flex; align-items: center; gap: 12px; }
 .user-info { cursor: pointer; color: #606266; }
+.guide-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: #909399; font-size: 13px; text-decoration: none;
+  padding: 4px 10px; border-radius: 4px; transition: all .2s;
+}
+.guide-link:hover { color: #409eff; background: #ecf5ff; }
 </style>

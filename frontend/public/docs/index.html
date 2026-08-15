@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智枢 SITOP 用户指南</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--blue:#409eff;--green:#67c23a;--orange:#e6a23c;--red:#f56c6c;--gray:#909399;--text:#303133;--text2:#606266;--text3:#909399;--bg:#f5f7fa;--white:#fff;--border:#e4e7ed;--sidebar-w:280px}
+body{font-family:-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;color:var(--text);background:var(--bg);line-height:1.8;font-size:15px}
+a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+/* Sidebar */
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:var(--sidebar-w);background:var(--white);border-right:1px solid var(--border);overflow-y:auto;z-index:100;display:flex;flex-direction:column}
+.sidebar-header{padding:20px 24px 16px;border-bottom:1px solid var(--border)}
+.sidebar-header h1{font-size:18px;color:var(--blue);margin-bottom:2px}
+.sidebar-header p{font-size:12px;color:var(--text3)}
+.sidebar-search{padding:12px 16px}
+.sidebar-search input{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none;transition:border-color .2s}
+.sidebar-search input:focus{border-color:var(--blue)}
+.sidebar-nav{flex:1;overflow-y:auto;padding:0 0 16px}
+.nav-group{padding:0 16px;margin-bottom:4px}
+.nav-group-title{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;padding:12px 0 6px;font-weight:600}
+.nav-item{display:block;padding:7px 12px;font-size:13.5px;color:var(--text2);border-radius:6px;cursor:pointer;transition:all .15s;margin-bottom:1px;text-decoration:none}
+.nav-item:hover{background:#ecf5ff;color:var(--blue);text-decoration:none}
+.nav-item.active{background:#ecf5ff;color:var(--blue);font-weight:600}
+/* Main content */
+.main{margin-left:var(--sidebar-w);padding:32px 48px 80px;max-width:960px}
+.section{margin-bottom:56px;scroll-margin-top:24px}
+.section h2{font-size:24px;font-weight:700;color:var(--text);margin-bottom:16px;padding-bottom:10px;border-bottom:2px solid var(--blue);display:inline-block}
+.section h3{font-size:18px;font-weight:600;color:var(--text);margin:24px 0 10px}
+.section h4{font-size:15px;font-weight:600;color:var(--text2);margin:18px 0 8px}
+.section p{margin-bottom:12px;color:var(--text2)}
+.section img{max-width:100%;border-radius:8px;border:1px solid var(--border);margin:16px 0;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.section ul,.section ol{margin:8px 0 16px 24px;color:var(--text2)}
+.section li{margin-bottom:6px}
+.section code{background:#f0f2f5;padding:2px 6px;border-radius:4px;font-family:"Menlo","Monaco","Courier New",monospace;font-size:13px;color:#e83e8c}
+.tip{background:#ecf5ff;border:1px solid #d9ecff;border-radius:8px;padding:14px 18px;margin:14px 0;font-size:14px;color:#337ecc}
+.tip::before{content:"💡 提示：";font-weight:600}
+.warning{background:#fdf6ec;border:1px solid #faecd8;border-radius:8px;padding:14px 18px;margin:14px 0;font-size:14px;color:#b88217}
+.warning::before{content:"⚠️ 注意：";font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:12px 0}
+th{background:#f5f7fa;padding:10px 14px;text-align:left;border:1px solid var(--border);font-weight:600;color:var(--text)}
+td{padding:10px 14px;border:1px solid var(--border);color:var(--text2)}
+.tag{display:inline-block;padding:2px 10px;border-radius:4px;font-size:12px;font-weight:500}
+.tag-blue{background:#ecf5ff;color:var(--blue)}.tag-green{background:#f0f9eb;color:var(--green)}
+.tag-orange{background:#fdf6ec;color:var(--orange)}.tag-red{background:#fef0f0;color:var(--red)}
+.tag-gray{background:#f4f4f5;color:var(--gray)}
+.steps{display:flex;gap:4px;align-items:center;margin:16px 0;flex-wrap:wrap}
+.step{background:var(--white);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:500;color:var(--text2);text-align:center;min-width:100px}
+.step-arrow{color:var(--gray);font-size:18px}
+.step.active{border-color:var(--blue);color:var(--blue);background:#ecf5ff}
+.role-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}
+.role-card{background:var(--white);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:center}
+.role-card h5{font-size:15px;margin-bottom:6px;color:var(--text)}
+.role-card p{font-size:13px;color:var(--text3);margin:0}
+.back-top{position:fixed;right:24px;bottom:24px;width:40px;height:40px;border-radius:50%;background:var(--blue);color:#fff;border:none;cursor:pointer;font-size:18px;display:none;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.15);z-index:200}
+.back-top.show{display:flex}
+.mobile-toggle{display:none;position:fixed;top:12px;left:12px;z-index:200;width:36px;height:36px;border-radius:8px;background:var(--white);border:1px solid var(--border);cursor:pointer;font-size:18px;align-items:center;justify-content:center}
+@media(max-width:900px){
+.sidebar{transform:translateX(-100%);transition:transform .25s}.sidebar.open{transform:translateX(0)}
+.main{margin-left:0;padding:20px 16px 60px}.mobile-toggle{display:flex}
+.role-cards{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</button>
+<nav class="sidebar">
+<div class="sidebar-header"><h1>智枢 SITOP</h1><p>用户指南 v1.0</p></div>
+<div class="sidebar-search"><input type="text" id="searchInput" placeholder="搜索指南内容…" oninput="filterNav(this.value)"></div>
+<div class="sidebar-nav" id="sidebarNav">
+<div class="nav-group"><div class="nav-group-title">快速入门</div>
+<a class="nav-item" href="#overview">平台概述</a>
+<a class="nav-item" href="#login">登录系统</a>
+<a class="nav-item" href="#roles">角色与权限</a>
+</div>
+<div class="nav-group"><div class="nav-group-title">功能模块</div>
+<a class="nav-item" href="#dashboard">仪表盘</a>
+<a class="nav-item" href="#servers">服务器管理</a>
+<a class="nav-item" href="#credentials">SSH 凭据管理</a>
+<a class="nav-item" href="#scripts">脚本库</a>
+<a class="nav-item" href="#templates">模板管理</a>
+<a class="nav-item" href="#repository">软件仓库</a>
+<a class="nav-item" href="#jobs">任务中心</a>
+<a class="nav-item" href="#audit">审计日志</a>
+<a class="nav-item" href="#users">用户管理</a>
+</div>
+<div class="nav-group"><div class="nav-group-title">参考</div>
+<a class="nav-item" href="#faq">常见问题</a>
+<a class="nav-item" href="#csv-format">CSV 导入格式</a>
+</div>
+</div>
+</nav>
+<main class="main">
+
+<!-- ========== 平台概述 ========== -->
+<div class="section" id="overview">
+<h2>平台概述</h2>
+<p><strong>智枢 SITOP</strong>（Server Intelligent Task Orchestration Platform）是一款面向运维和系统管理员的<strong>服务器智能任务编排平台</strong>。它通过可视化的 Web 界面，让您能够高效地管理服务器资产、编排自动化初始化流程、集中管理脚本和软件包，并实时追踪批量任务的执行进度。</p>
+<h3>核心能力</h3>
+<ul>
+<li><strong>服务器资产管理</strong> — 以分组形式组织服务器，支持多种认证方式（密码、密钥、跳板机），批量导入/导出、连通性检测</li>
+<li><strong>脚本与模板编排</strong> — 集中管理 Shell / Python 脚本，通过模板将脚本组合为多步骤自动化流水线</li>
+<li><strong>软件仓库</strong> — 基于 SFTP 的软件包管理，自动生成变量名并在脚本执行时注入下载链接</li>
+<li><strong>任务执行引擎</strong> — 四阶段执行流水线（连通性→健康检查→初始化→完成度检查），WebSocket 实时进度推送</li>
+<li><strong>多租户隔离</strong> — 数据完全隔离，支持独立的用户和权限管理</li>
+<li><strong>审计与报告</strong> — 完整的操作审计日志，支持 CSV / PDF 报告和 HTML 日志导出</li>
+</ul>
+<h3>典型工作流程</h3>
+<div class="steps">
+<div class="step">1. 添加服务器</div><span class="step-arrow">→</span>
+<div class="step">2. 编写脚本</div><span class="step-arrow">→</span>
+<div class="step">3. 创建模板</div><span class="step-arrow">→</span>
+<div class="step active">4. 执行任务</div><span class="step-arrow">→</span>
+<div class="step">5. 查看结果</div>
+</div>
+</div>
+
+<!-- ========== 登录系统 ========== -->
+<div class="section" id="login">
+<h2>登录系统</h2>
+<img src="/docs/images/login.png" alt="登录页面">
+<p>打开浏览器访问 SITOP 平台地址，您将看到如上图所示的登录页面。页面采用深色毛玻璃卡片设计，背景为科技感隧道图。</p>
+<h3>登录步骤</h3>
+<ol>
+<li>在<strong>用户名</strong>输入框中填入管理员为您分配的用户名</li>
+<li>在<strong>密码</strong>输入框中填入对应密码</li>
+<li>点击<strong>登 录</strong>按钮或按 <code>Enter</code> 键</li>
+<li>登录成功后将自动跳转到仪表盘页面</li>
+</ol>
+<div class="tip">如果登录失败，请检查用户名和密码是否正确。连续多次失败可能触发频率限制，请稍后再试。</div>
+<h3>退出登录</h3>
+<p>在页面右上角点击您的用户名，在下拉菜单中选择<strong>退出登录</strong>即可安全退出系统。</p>
+</div>
+
+<!-- ========== 角色与权限 ========== -->
+<div class="section" id="roles">
+<h2>角色与权限</h2>
+<p>SITOP 采用基于角色的访问控制（RBAC），共有三种角色：</p>
+<div class="role-cards">
+<div class="role-card"><h5>🔑 管理员 (admin)</h5><p>拥有全部权限，包括用户管理、审计日志查看、软件仓库删除操作</p></div>
+<div class="role-card"><h5>⚙️ 操作员 (operator)</h5><p>可管理服务器、脚本、模板、执行任务、上传软件包，但不能管理用户或查看审计日志</p></div>
+<div class="role-card"><h5>👁 只读 (viewer)</h5><p>仅可查看仪表盘、服务器、脚本、模板、任务和仓库信息，不能执行任何写操作</p></div>
+</div>
+<table>
+<tr><th>功能</th><th>管理员</th><th>操作员</th><th>只读</th></tr>
+<tr><td>仪表盘</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>服务器管理</td><td>✅ 读写</td><td>✅ 读写</td><td>✅ 只读</td></tr>
+<tr><td>脚本库</td><td>✅ 读写</td><td>✅ 读写</td><td>✅ 只读</td></tr>
+<tr><td>模板管理</td><td>✅ 读写</td><td>✅ 读写</td><td>✅ 只读</td></tr>
+<tr><td>软件仓库 - 上传</td><td>✅</td><td>✅</td><td>❌</td></tr>
+<tr><td>软件仓库 - 删除</td><td>✅</td><td>❌</td><td>❌</td></tr>
+<tr><td>任务中心</td><td>✅ 读写</td><td>✅ 读写</td><td>✅ 只读</td></tr>
+<tr><td>审计日志</td><td>✅</td><td>❌</td><td>❌</td></tr>
+<tr><td>用户管理</td><td>✅</td><td>❌</td><td>❌</td></tr>
+</table>
+</div>
+
+<!-- ========== 仪表盘 ========== -->
+<div class="section" id="dashboard">
+<h2>仪表盘</h2>
+<img src="/docs/images/dashboard.png" alt="仪表盘">
+<p>仪表盘是登录后的默认页面，提供当前租户的全局数据概览。</p>
+<h3>统计卡片</h3>
+<p>顶部展示 5 个关键指标卡片：</p>
+<ul>
+<li><strong>总任务数</strong> — 当前租户创建的所有初始化任务总数</li>
+<li><strong>近 7 天任务</strong> — 最近 7 天内创建的任务数量</li>
+<li><strong>成功率</strong> — 已完成任务中成功状态的占比（绿色显示）</li>
+<li><strong>服务器总数</strong> — 当前租户注册的服务器总数</li>
+<li><strong>活跃分组</strong> — 包含服务器的分组数量</li>
+</ul>
+<h3>图表</h3>
+<ul>
+<li><strong>近 7 天任务趋势</strong> — 折线图展示每日任务总数与成功数的变化趋势</li>
+<li><strong>任务状态分布</strong> — 环形饼图展示等待中、运行中、成功、失败、已取消五种状态的分布比例</li>
+</ul>
+</div>
+
+<!-- ========== 服务器管理 ========== -->
+<div class="section" id="servers">
+<h2>服务器管理</h2>
+<img src="/docs/images/servers.png" alt="服务器管理">
+<p>服务器管理模块是 SITOP 的核心功能之一，采用<strong>左分组、右列表</strong>的双面板布局，支持服务器分组管理和批量操作。</p>
+
+<h3>服务器分组</h3>
+<p>左侧面板展示所有服务器分组，每个分组右侧显示该组服务器数量的角标。</p>
+<h4>新建分组</h4>
+<ol>
+<li>点击左上角<strong>新建分组</strong>按钮</li>
+<li>填写分组名称（必填）、描述（选填）</li>
+<li>可选择<strong>默认凭据</strong>：该分组内服务器若未单独指定凭据，将使用此默认凭据</li>
+<li>开启/关闭<strong>自动巡检</strong>：启用后系统会定期对分组内服务器进行连通性检测</li>
+<li>点击<strong>创建</strong>完成</li>
+</ol>
+<h4>分组操作</h4>
+<p>点击分组右侧的 <strong>⋯</strong> 图标，可执行：</p>
+<ul>
+<li><strong>分组详情</strong> — 查看分组描述、默认凭据、自动巡检状态及成员服务器列表</li>
+<li><strong>编辑分组</strong> — 修改分组名称、描述、默认凭据和巡检设置</li>
+<li><strong>删除分组</strong> — 删除分组后，组内服务器将自动归入"未分组"</li>
+</ul>
+
+<h3>服务器列表</h3>
+<p>右侧面板展示选中分组下的所有服务器，支持多维度筛选和排序。</p>
+<h4>添加服务器</h4>
+<ol>
+<li>点击右上角<strong>添加服务器</strong>按钮</li>
+<li>填写主机名（必填）、IP 地址（必填）、端口（默认 22）</li>
+<li>选择协议（SSH / RDP / Telnet / VNC）和平台（Linux / Windows / Unix / 网络设备 / 其他）</li>
+<li>设置连接超时和执行超时时间</li>
+<li>选择认证方式（详见下方 <a href="#credentials">SSH 凭据管理</a>）</li>
+<li>选择所属分组和标签</li>
+<li>点击<strong>添加</strong>完成</li>
+</ol>
+<h4>搜索与筛选</h4>
+<ul>
+<li><strong>搜索框</strong>：支持按主机名、IP 地址、标签搜索，可切换模糊/精确模式</li>
+<li><strong>列筛选</strong>：点击表头筛选图标，可按端口、协议、平台、连通性状态、分组、标签过滤</li>
+<li><strong>分页</strong>：支持 20/50/100/200 条每页或查看全部</li>
+</ul>
+<h4>服务器详情</h4>
+<p>点击任意服务器行，右侧将滑出详情抽屉，展示完整信息包括：主机名、IP、端口、协议、平台、系统信息、连通性状态、最后检测时间、超时设置、SSH 凭据、所属分组、标签和备注。</p>
+
+<h4>批量操作</h4>
+<p>勾选多台服务器后，点击右上角<strong>批量操作</strong>按钮：</p>
+<ul>
+<li><strong>批量连通性测试</strong> — 对所有选中服务器进行 SSH 连通性检测</li>
+<li><strong>批量更新凭据</strong> — 将选中服务器的 SSH 凭据统一更新为指定凭据</li>
+<li><strong>移动分组</strong> — 将选中服务器移动到新的分组（替换现有分组）</li>
+<li><strong>增加分组</strong> — 为选中服务器追加新的分组（保留现有分组）</li>
+<li><strong>批量删除</strong> — 删除所有选中的服务器</li>
+</ul>
+
+<h4>导入与导出</h4>
+<ul>
+<li><strong>导入</strong>：支持通过 CSV 文件批量导入服务器（详见 <a href="#csv-format">CSV 导入格式</a>），可下载 CSV 模板</li>
+<li><strong>导出</strong>：将当前分组的服务器列表导出为 CSV 文件</li>
+</ul>
+
+<h4>连通性测试与命令执行</h4>
+<ul>
+<li><strong>测试连通性</strong>：对当前分组所有服务器进行 SSH 连接测试</li>
+<li><strong>执行命令</strong>：在当前分组的所有服务器上执行指定命令，实时展示各服务器的执行结果</li>
+</ul>
+</div>
+
+<!-- ========== SSH 凭据管理 ========== -->
+<div class="section" id="credentials">
+<h2>SSH 凭据管理</h2>
+<p>SSH 凭据用于连接目标服务器执行远程命令。凭据可预先创建并复用，也可在添加服务器时即时创建。</p>
+
+<h3>认证方式</h3>
+<table>
+<tr><th>认证类型</th><th>说明</th><th>所需信息</th></tr>
+<tr><td><span class="tag tag-blue">密码</span></td><td>使用用户名 + 密码登录</td><td>用户名、密码</td></tr>
+<tr><td><span class="tag tag-green">SSH 密钥</span></td><td>使用 SSH 私钥认证</td><td>用户名、私钥内容</td></tr>
+<tr><td><span class="tag tag-orange">SSH 密钥 + 密码</span></td><td>加密私钥 + 解密密码</td><td>用户名、私钥内容、私钥密码</td></tr>
+<tr><td><span class="tag tag-gray">临时 Token</span></td><td>一次性临时令牌</td><td>用户名、Token 内容</td></tr>
+</table>
+
+<h3>跳板机配置</h3>
+<p>凭据支持配置<strong>跳板机（Jump Host）</strong>，用于需要通过堡垒机访问内网服务器的场景：</p>
+<ul>
+<li><strong>跳板机地址</strong>：堡垒机的 IP 或域名</li>
+<li><strong>端口</strong>：跳板机 SSH 端口（默认 22）</li>
+<li><strong>跳板用户</strong>：登录跳板机的用户名</li>
+</ul>
+<div class="tip">跳板机使用与凭据相同的认证信息（密码或密钥）进行连接。</div>
+
+<h3>凭据优先级</h3>
+<p>服务器连接时的凭据选择优先级：</p>
+<ol>
+<li>服务器自身指定的 SSH 凭据</li>
+<li>所在分组的默认凭据</li>
+<li>若均未配置，连接将失败</li>
+</ol>
+</div>
+
+<!-- ========== 脚本库 ========== -->
+<div class="section" id="scripts">
+<h2>脚本库</h2>
+<img src="/docs/images/scripts.png" alt="脚本库">
+<p>脚本库集中管理用于服务器初始化的 Shell 和 Python 脚本。每个脚本都有明确的类型分类，支持版本管理和在线测试运行。</p>
+
+<h3>脚本类型</h3>
+<table>
+<tr><th>类型</th><th>用途</th><th>执行阶段</th></tr>
+<tr><td><span class="tag tag-green">健康检查</span></td><td>在初始化前检测服务器环境是否满足前置条件</td><td>第 2 阶段</td></tr>
+<tr><td><span class="tag tag-blue">初始化步骤</span></td><td>执行具体的初始化操作（安装软件、配置服务等）</td><td>第 3 阶段</td></tr>
+<tr><td><span class="tag tag-orange">完成度检查</span></td><td>验证初始化是否成功完成</td><td>第 4 阶段</td></tr>
+</table>
+
+<h3>新建脚本</h3>
+<ol>
+<li>点击右上角<strong>新建脚本</strong>按钮</li>
+<li>填写脚本名称（必填）</li>
+<li>选择脚本类型（健康检查 / 初始化步骤 / 完成度检查）</li>
+<li>选择语言（Shell / Python）</li>
+<li>填写描述信息</li>
+<li>在代码编辑器中编写脚本内容</li>
+<li>点击<strong>保存</strong></li>
+</ol>
+
+<h3>插入软件包变量</h3>
+<p>在脚本编辑器中，点击<strong>插入软件包变量</strong>按钮，将弹出软件仓库文件选择器：</p>
+<ol>
+<li>浏览仓库目录，找到需要的软件包文件</li>
+<li>点击文件右侧的<strong>插入</strong>按钮</li>
+<li>系统将在光标位置自动插入 <code>curl -fsSL -O "$PKG_XXX"</code> 下载命令</li>
+<li>变量名由系统自动生成（规则：<code>PKG_</code> + 文件名大写 + 非字母数字转下划线）</li>
+</ol>
+<div class="tip">脚本执行时，SITOP 会自动注入所有软件包变量（<code>export</code>），脚本中可直接使用 <code>$PKG_XXX</code> 变量获取对应的 HTTP 下载链接。</div>
+
+<h3>测试运行</h3>
+<p>点击脚本操作栏的<strong>测试运行</strong>按钮：</p>
+<ol>
+<li>选择一个服务器分组</li>
+<li>选择该分组下的一台服务器</li>
+<li>点击<strong>执行</strong>，系统将把脚本发送到目标服务器执行</li>
+<li>执行完成后展示退出码和输出内容</li>
+</ol>
+<div class="warning">测试运行会在目标服务器上实际执行脚本内容，请确保脚本安全无害。</div>
+</div>
+
+<!-- ========== 模板管理 ========== -->
+<div class="section" id="templates">
+<h2>模板管理</h2>
+<img src="/docs/images/templates.png" alt="模板管理">
+<p>模板将多个脚本按照特定顺序编排为一个可复用的初始化方案。创建任务时，只需选择模板和服务器分组即可执行。</p>
+
+<h3>模板结构</h3>
+<p>一个完整的模板包含以下部分：</p>
+<ul>
+<li><strong>健康检查脚本</strong>（可选）— 在初始化前验证服务器环境</li>
+<li><strong>初始化步骤</strong>（1~N 个）— 按顺序执行的脚本步骤</li>
+<li><strong>完成度检查脚本</strong>（可选）— 在初始化后验证执行结果</li>
+</ul>
+
+<h3>创建模板</h3>
+<ol>
+<li>点击<strong>新建模板</strong>按钮</li>
+<li>填写模板名称和描述</li>
+<li>选择健康检查脚本（可选）</li>
+<li>选择完成度检查脚本（可选）</li>
+<li>添加初始化步骤：
+  <ul>
+    <li>每个步骤选择一个<strong>初始化步骤</strong>类型的脚本</li>
+    <li>设置<strong>超时时间</strong>（10~3600 秒）</li>
+    <li>设置<strong>失败策略</strong>：中断（abort）/ 继续（continue）/ 重试（retry）</li>
+  </ul>
+</li>
+<li>可点击<strong>+ 添加步骤</strong>增加更多步骤，或点击 🗑️ 删除步骤</li>
+<li>点击<strong>保存</strong></li>
+</ol>
+</div>
+
+<!-- ========== 软件仓库 ========== -->
+<div class="section" id="repository">
+<h2>软件仓库</h2>
+<img src="/docs/images/repository.png" alt="软件仓库">
+<p>软件仓库提供基于 SFTP 的文件管理功能，用于存储初始化过程中需要的软件安装包、配置文件等资源。</p>
+
+<h3>文件浏览</h3>
+<p>仓库以目录树形式展示文件，顶部面包屑导航可快速跳转目录层级。每个文件自动生成一个<strong>变量名</strong>，格式为 <code>PKG_</code> + 文件名大写（非字母数字字符转为下划线）。例如：</p>
+<ul>
+<li><code>mysql-8.0.26.tar.gz</code> → <code>PKG_MYSQL_8_0_26_TAR_GZ</code></li>
+<li><code>nginx.conf</code> → <code>PKG_NGINX_CONF</code></li>
+</ul>
+
+<h3>文件操作</h3>
+<ul>
+<li><strong>上传文件</strong>（操作员/管理员）：点击<strong>上传文件</strong>按钮，支持拖拽上传，同名文件自动重命名为 <code>name(1).ext</code>，单文件最大 1GB</li>
+<li><strong>下载文件</strong>：优先通过 HTTP 直链下载，不可达时回退到后端代理下载</li>
+<li><strong>复制变量</strong>：点击<strong>复制变量</strong>将变量名复制到剪贴板</li>
+<li><strong>删除文件</strong>（仅管理员）：需二次确认，操作不可恢复</li>
+<li><strong>批量删除</strong>（仅管理员）：勾选多个文件后批量删除</li>
+<li><strong>搜索</strong>：按文件名在当前目录内搜索</li>
+<li><strong>排序</strong>：支持按名称、大小、修改时间排序</li>
+</ul>
+
+<h3>变量注入机制</h3>
+<p>当任务执行脚本时，SITOP 会自动将仓库中所有文件的变量以 <code>export</code> 形式注入，变量值为该文件的 HTTP 下载地址。脚本中可直接使用：</p>
+<pre><code>curl -fsSL -O "$PKG_MYSQL_8_0_26_TAR_GZ"</code></pre>
+<div class="tip">在脚本库编辑器中可使用"插入软件包变量"按钮一键插入下载命令，无需手动复制变量名。</div>
+</div>
+
+<!-- ========== 任务中心 ========== -->
+<div class="section" id="jobs">
+<h2>任务中心</h2>
+<img src="/docs/images/jobs.png" alt="任务中心">
+<p>任务中心是 SITOP 的核心执行模块，负责将模板中定义的初始化方案批量应用到目标服务器分组。</p>
+
+<h3>创建任务</h3>
+<ol>
+<li>点击<strong>新建任务</strong>按钮</li>
+<li>选择一个<strong>初始化模板</strong></li>
+<li>选择一个<strong>服务器分组</strong></li>
+<li>点击<strong>启动任务</strong></li>
+</ol>
+<p>任务创建后，系统将自动开始对分组内所有服务器执行初始化流程。</p>
+
+<h3>四阶段执行流水线</h3>
+<div class="steps">
+<div class="step">1. 连通性检查</div><span class="step-arrow">→</span>
+<div class="step">2. 健康检查</div><span class="step-arrow">→</span>
+<div class="step active">3. 初始化执行</div><span class="step-arrow">→</span>
+<div class="step">4. 完成度检查</div>
+</div>
+<table>
+<tr><th>阶段</th><th>说明</th><th>失败处理</th></tr>
+<tr><td><strong>连通性检查</strong></td><td>验证 SSH 连接是否可用</td><td>跳过该服务器</td></tr>
+<tr><td><strong>健康检查</strong></td><td>运行健康检查脚本验证前置条件</td><td>根据脚本退出码判断</td></tr>
+<tr><td><strong>初始化执行</strong></td><td>按模板步骤顺序执行初始化脚本</td><td>根据步骤的失败策略（中断/继续/重试）</td></tr>
+<tr><td><strong>完成度检查</strong></td><td>运行完成度检查脚本验证结果</td><td>根据脚本退出码判断</td></tr>
+</table>
+
+<h3>任务详情</h3>
+<p>点击任务的<strong>详情</strong>按钮，打开详情对话框：</p>
+<ul>
+<li><strong>步骤条</strong>：顶部展示四阶段进度</li>
+<li><strong>基本信息</strong>：状态、当前阶段、完成进度</li>
+<li><strong>完成度矩阵</strong>：表格形式展示每台服务器在各阶段的通过/失败状态</li>
+<li><strong>服务器任务列表</strong>：展示每台服务器的执行日志摘要</li>
+</ul>
+
+<h3>实时进度</h3>
+<p>对于运行中的任务，系统通过 <strong>WebSocket</strong> 实时推送进度更新，同时以 2 秒间隔轮询作为后备。无需手动刷新即可看到最新状态。</p>
+
+<h3>导出功能</h3>
+<ul>
+<li><strong>导出全部日志</strong>：生成自包含的 HTML 文件，包含完整的执行记录、命令输出和统计数据，支持按状态筛选和主机名搜索</li>
+<li><strong>导出 CSV</strong>：将任务结果导出为 CSV 格式报告</li>
+<li><strong>导出 PDF</strong>：将任务结果导出为 PDF 格式报告</li>
+</ul>
+
+<h3>取消任务</h3>
+<p>对于等待中或运行中的任务，可点击<strong>取消任务</strong>按钮。正在执行的步骤会在当前阶段结束后停止。</p>
+</div>
+
+<!-- ========== 审计日志 ========== -->
+<div class="section" id="audit">
+<h2>审计日志</h2>
+<img src="/docs/images/audit-logs.png" alt="审计日志">
+<p>审计日志记录系统中所有重要的操作事件，仅限<strong>管理员</strong>角色查看。</p>
+
+<h3>日志字段</h3>
+<table>
+<tr><th>字段</th><th>说明</th></tr>
+<tr><td>时间</td><td>操作发生的精确时间</td></tr>
+<tr><td>用户</td><td>执行操作的用户名</td></tr>
+<tr><td>操作</td><td>操作类型（如 create、update、delete、login）</td></tr>
+<tr><td>资源类型</td><td>被操作的资源类型（如 server、group、script、template）</td></tr>
+<tr><td>资源 ID</td><td>被操作资源的唯一标识</td></tr>
+<tr><td>IP</td><td>发起请求的客户端 IP 地址</td></tr>
+<tr><td>详情</td><td>操作的详细参数（JSON 格式）</td></tr>
+</table>
+
+<h3>筛选与分页</h3>
+<ul>
+<li>支持按<strong>操作类型</strong>和<strong>资源类型</strong>进行文本筛选</li>
+<li>每页展示 20 条记录，支持翻页浏览</li>
+</ul>
+</div>
+
+<!-- ========== 用户管理 ========== -->
+<div class="section" id="users">
+<h2>用户管理</h2>
+<img src="/docs/images/users.png" alt="用户管理">
+<p>用户管理模块允许管理员创建和管理当前租户下的用户账户，仅限<strong>管理员</strong>角色使用。</p>
+
+<h3>创建用户</h3>
+<ol>
+<li>点击<strong>新建用户</strong>按钮</li>
+<li>填写用户名（必填）、密码（必填）、邮箱（选填）</li>
+<li>选择角色：管理员 / 操作员 / 只读</li>
+<li>点击<strong>创建</strong></li>
+</ol>
+
+<h3>角色变更</h3>
+<p>在用户列表中，直接点击角色列的下拉框即可实时修改用户角色，修改立即生效。</p>
+
+<h3>删除用户</h3>
+<p>点击<strong>删除</strong>按钮并确认后，用户将被永久删除。</p>
+<div class="warning">删除用户操作不可恢复，请谨慎操作。被删除用户将无法再登录系统。</div>
+</div>
+
+<!-- ========== 常见问题 ========== -->
+<div class="section" id="faq">
+<h2>常见问题</h2>
+
+<h3>Q: 服务器连通性检测失败怎么办？</h3>
+<p>请检查以下几点：</p>
+<ol>
+<li>目标服务器的 IP 地址和 SSH 端口是否正确</li>
+<li>SSH 凭据是否配置正确（密码/密钥是否有效）</li>
+<li>网络是否可达（防火墙规则、安全组设置）</li>
+<li>如果使用跳板机，确认跳板机地址和凭据正确</li>
+</ol>
+
+<h3>Q: 任务执行过程中某步骤失败了怎么办？</h3>
+<p>在任务详情中查看该服务器对应步骤的执行日志，分析错误输出。根据模板中设置的失败策略：</p>
+<ul>
+<li><strong>中断</strong>：该服务器跳过后续步骤，标记为失败</li>
+<li><strong>继续</strong>：跳过失败步骤，继续执行后续步骤</li>
+<li><strong>重试</strong>：自动重试该步骤（最多 3 次）</li>
+</ul>
+
+<h3>Q: 如何在脚本中使用软件仓库的文件？</h3>
+<p>在脚本编辑器中使用"插入软件包变量"按钮，或手动编写：</p>
+<pre><code>curl -fsSL -O "$PKG_文件名大写"</code></pre>
+<p>变量名自动生成规则：<code>PKG_</code> + 文件名转大写 + 非字母数字字符转下划线。</p>
+
+<h3>Q: 导出的 CSV 文件乱码？</h3>
+<p>CSV 使用 UTF-8 编码。在 Excel 中打开时，请使用"数据 → 从文本/CSV"导入功能，手动选择 UTF-8 编码。</p>
+</div>
+
+<!-- ========== CSV 导入格式 ========== -->
+<div class="section" id="csv-format">
+<h2>CSV 导入格式</h2>
+<p>服务器管理模块支持通过 CSV 文件批量导入服务器。可在导入对话框中下载 CSV 模板。</p>
+
+<h3>字段说明</h3>
+<table>
+<tr><th>字段</th><th>必填</th><th>说明</th></tr>
+<tr><td><code>hostname</code></td><td>✅</td><td>主机名（支持中文）</td></tr>
+<tr><td><code>ip</code></td><td>✅</td><td>IP 地址，全局唯一，重复会报错</td></tr>
+<tr><td><code>auth_type</code></td><td>❌</td><td>认证方式：<code>password</code> / <code>credential</code>；留空但填写了用户名+密码时自动按密码认证</td></tr>
+<tr><td><code>auth_username</code></td><td>❌</td><td>认证用户名（密码认证时必填）</td></tr>
+<tr><td><code>auth_password</code></td><td>❌</td><td>认证密码（密码认证时必填，入库加密存储）</td></tr>
+<tr><td><code>labels</code></td><td>❌</td><td>标签，逗号分隔可填多个，如：<code>生产,高优</code></td></tr>
+<tr><td><code>tags</code></td><td>❌</td><td>附加标签，逗号分隔可填多个，如：<code>nginx,db</code></td></tr>
+<tr><td><code>groups</code></td><td>❌</td><td>分组名，逗号分隔；不存在时自动创建，如：<code>web,db</code></td></tr>
+<tr><td><code>ssh_port</code></td><td>❌</td><td>SSH 端口，默认 22</td></tr>
+<tr><td><code>protocol</code></td><td>❌</td><td>连接协议，默认 <code>ssh</code></td></tr>
+<tr><td><code>platform</code></td><td>❌</td><td>系统平台，默认 <code>linux</code></td></tr>
+<tr><td><code>comment</code></td><td>❌</td><td>备注（支持中文）</td></tr>
+</table>
+
+<h3>示例 CSV</h3>
+<pre><code>hostname,ip,auth_type,auth_username,auth_password,labels,tags,groups,ssh_port,protocol,platform,comment
+web-01,10.20.1.10,,root,MyPass@123,生产环境,nginx,web,22,ssh,linux,Web服务器
+db-01,10.20.1.20,,root,MyPass@456,生产环境,mysql,db,22,ssh,linux,数据库服务器</code></pre>
+<div class="tip">CSV 支持 UTF-8 和 GBK 编码（Excel 中文环境可直接保存）。批量导入不支持私钥认证；仅填用户名+密码会自动按密码认证处理。</div>
+</div>
+
+</main>
+<button class="back-top" id="backTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+<script>
+// Navigation active state
+const navItems = document.querySelectorAll('.nav-item');
+const sections = document.querySelectorAll('.section');
+function updateActiveNav(){
+  let current = '';
+  sections.forEach(s => { if(window.scrollY >= s.offsetTop - 100) current = s.id; });
+  navItems.forEach(n => { n.classList.toggle('active', n.getAttribute('href') === '#' + current); });
+}
+window.addEventListener('scroll', () => { updateActiveNav(); document.getElementById('backTop').classList.toggle('show', window.scrollY > 400); });
+updateActiveNav();
+// Search filter
+function filterNav(q){
+  q = q.toLowerCase().trim();
+  navItems.forEach(n => { n.style.display = (!q || n.textContent.toLowerCase().includes(q)) ? '' : 'none'; });
+}
+// Mobile sidebar close on nav
+navItems.forEach(n => n.addEventListener('click', () => { document.querySelector('.sidebar').classList.remove('open'); }));
+</script>
+</body>
+</html>
