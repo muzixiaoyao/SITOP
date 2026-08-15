@@ -1,0 +1,41 @@
+name: sitop
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-django-insecure-dev-key-change-in-production}
+      - CREDENTIAL_ENCRYPTION_KEY=${CREDENTIAL_ENCRYPTION_KEY}
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=True
+      # 软件仓库 (Software Repository)
+      - REPO_SSH_HOST=${REPO_SSH_HOST:-192.168.1.1}
+      - REPO_SSH_PORT=${REPO_SSH_PORT:-22}
+      - REPO_SSH_USER=${REPO_SSH_USER:-root}
+      # 免密SSH私钥路径（容器内，如挂载的 /ssh_keys/lizi；paramiko 不解析 ~/.ssh/config）
+      - REPO_SSH_KEY_PATH=${REPO_SSH_KEY_PATH:-}
+      - REPO_ROOT_PATH=${REPO_ROOT_PATH:-/data/initpackages}
+      - REPO_HTTP_URL=${REPO_HTTP_URL:-http://192.168.1.1:8081/}
+      - REPO_MAX_UPLOAD_SIZE=${REPO_MAX_UPLOAD_SIZE:-1073741824}
+    ports:
+      - "18080:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./backend_data:/app/data
+      - ./ssh_keys:/ssh_keys:ro
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 120 --reload"
