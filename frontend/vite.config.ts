@@ -18,4 +18,16 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vue-vendor': ['vue', 'vue-router', 'pinia', 'axios'],
+          'element-plus': ['element-plus', '@element-plus/icons-vue'],
+          'echarts': ['echarts'],
+        },
+      },
+    },
+  },
 })

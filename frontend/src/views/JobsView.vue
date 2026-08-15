@@ -33,19 +33,20 @@
         </el-table>
       </el-card>
 
-      <el-card v-if="selectedJob" class="job-detail" style="margin-top: 16px">
+      <el-dialog v-model="showDetailDialog" width="960px" top="4vh" :close-on-click-modal="false" @close="onDetailClose">
         <template #header>
           <div class="page-header">
-            <span>任务详情: {{ selectedJob.template_name }}</span>
+            <span>任务详情: {{ selectedJob?.template_name || '' }}</span>
             <div>
               <el-button size="small" @click="exportJobLogs">导出全部日志</el-button>
-              <el-button v-if="['success','failed','cancelled'].includes(selectedJob.status)" size="small" @click="exportReport('csv')">导出 CSV</el-button>
-              <el-button v-if="['success','failed','cancelled'].includes(selectedJob.status)" size="small" @click="exportReport('pdf')">导出 PDF</el-button>
-              <el-button v-if="selectedJob.status === 'running' || selectedJob.status === 'pending'" type="danger" size="small" @click="cancelJob">取消任务</el-button>
+              <el-button v-if="['success','failed','cancelled'].includes(selectedJob?.status || '')" size="small" @click="exportReport('csv')">导出 CSV</el-button>
+              <el-button v-if="['success','failed','cancelled'].includes(selectedJob?.status || '')" size="small" @click="exportReport('pdf')">导出 PDF</el-button>
+              <el-button v-if="selectedJob?.status === 'running' || selectedJob?.status === 'pending'" type="danger" size="small" @click="cancelJob">取消任务</el-button>
               <el-button size="small" @click="refreshJob">刷新</el-button>
             </div>
           </div>
         </template>
+        <template v-if="selectedJob">
         <el-steps :active="activePhaseIndex" finish-status="success" simple style="margin-bottom: 16px">
           <el-step title="连通性检查" />
           <el-step title="健康检查" />
@@ -96,7 +97,8 @@
           </el-table-column>
         </el-table>
         <el-empty v-else description="暂无完成度数据" :image-size="60" />
-      </el-card>
+        </template>
+      </el-dialog>
 
       <el-drawer v-model="showLogDrawer" :title="`执行日志 — ${logDrawerTask?.hostname || ''}`" size="55%">
         <div v-for="log in (logDrawerTask?.step_logs || [])" :key="log.id" class="drawer-log">
@@ -133,7 +135,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppLayout from '@/components/AppLayout.vue'
 import { jobApi, templateApi, subscribeJob, type InitJob, type InitTemplate, type ServerTask, type StepLog } from '@/api/tasks'
@@ -145,6 +147,7 @@ const templates = ref<InitTemplate[]>([])
 const groups = ref<ServerGroup[]>([])
 const loading = ref(false)
 const selectedJob = ref<InitJob | null>(null)
+const showDetailDialog = ref(false)
 const showCreateJob = ref(false)
 const creating = ref(false)
 const newJobTemplate = ref('')
@@ -377,13 +380,14 @@ async function loadGroups() {
 async function selectJob(row: InitJob) {
   const { data } = await jobApi.get(row.id)
   selectedJob.value = data as InitJob
+  showDetailDialog.value = true
   if (['pending', 'running'].includes(selectedJob.value.status)) {
     startLiveUpdates(selectedJob.value)
   }
-  // 滚动到详情卡片
-  await nextTick()
-  const detailEl = document.querySelector('.job-detail')
-  if (detailEl) detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function onDetailClose() {
+  stopLiveUpdates()
 }
 
 async function refreshJob() {
