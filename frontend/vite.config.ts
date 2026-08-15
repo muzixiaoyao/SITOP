@@ -13,7 +13,8 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://221.228.10.207:18080',
+        // 开发代理目标：通过环境变量配置，勿提交真实地址
+        target: process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
     },
