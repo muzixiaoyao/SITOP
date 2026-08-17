@@ -111,8 +111,9 @@ Ticket（工单）
 | `assignee` | FK → User (null) | 当前处理人 |
 | `related_job` | FK → Job (null) | 关联的 SITOP 任务 |
 | `sla_policy` | FK → SLAPolicy | 适用的 SLA 策略 |
-| `first_response_at` | DateTimeField (null) | 首次响应时间 |
-| `resolved_at` | DateTimeField (null) | 解决时间 |
+| `first_response_at` | DateTimeField (null) | 首次响应时间（响应 SLA 终点） |
+| `assigned_at` | DateTimeField (null) | 首次分派时间（处理 SLA 起点） |
+| `resolved_at` | DateTimeField (null) | 解决时间（处理 SLA 终点） |
 | `closed_at` | DateTimeField (null) | 关闭时间 |
 | `created_at` | DateTimeField | 创建时间 |
 | `updated_at` | DateTimeField | 更新时间 |
@@ -313,17 +314,19 @@ class TicketEngine:
 
 | 计时器 | 起点 | 终点 | 说明 |
 |--------|------|------|------|
-| 响应计时 | `created_at` | `first_response_at` | 提交到首次响应 |
-| 处理计时 | `created_at` | `resolved_at` | 提交到解决 |
+| 响应计时 | `created_at` | `first_response_at` | 客户等待首次响应的时间 |
+| 处理计时 | `assigned_at` | `resolved_at` | 实际处理耗时（不含排队等待分派的时间） |
 
 ### 5.2 超时升级流程
 
 ```
-工单创建 → SLA 计时开始
+工单创建 → 响应 SLA 计时开始
     │
     ├── 响应时限 50%  → 站内预警（黄色）
     ├── 响应时限 80%  → 站内预警（橙色）+ 通知处理人
     ├── 响应时限 100% → SLA 违规（红色）+ 通知管理者 + 自动升级
+    │
+工单分派 → 处理 SLA 计时开始（assigned_at）
     │
     ├── 处理时限 80%  → 站内预警
     └── 处理时限 100% → SLA 违规 + 升级至更高级别
