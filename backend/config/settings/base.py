@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "apps.reports",
     "apps.repository",
     "apps.tickets",
+    "apps.kb",
 ]
 
 MIDDLEWARE = [
