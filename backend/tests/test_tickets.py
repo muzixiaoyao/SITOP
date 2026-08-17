@@ -109,3 +109,20 @@ class TestTicketModels(TestCase):
         )
         assert not notif.is_read
         assert notif.user == user
+
+
+from apps.tickets.ticket_no import generate_ticket_no
+
+
+class TestTicketNo(TestCase):
+    def test_generate_first_ticket_of_day(self):
+        no = generate_ticket_no()
+        assert no.startswith("TK-")
+        assert len(no) == 16  # TK-YYYYMMDD-XXXX
+
+    def test_sequential_numbers(self):
+        no1 = generate_ticket_no()
+        no2 = generate_ticket_no()
+        seq1 = int(no1.split("-")[-1])
+        seq2 = int(no2.split("-")[-1])
+        assert seq2 == seq1 + 1
