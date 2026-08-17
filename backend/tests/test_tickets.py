@@ -126,3 +126,71 @@ class TestTicketNo(TestCase):
         seq1 = int(no1.split("-")[-1])
         seq2 = int(no2.split("-")[-1])
         assert seq2 == seq1 + 1
+
+from apps.tickets.engine import TicketEngine
+
+
+class TestTicketEngine(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="测试企业")
+        self.submitter = User.objects.create_user(username="sub", password="pass", tenant=self.tenant, role="enterprise_user")
+        self.handler = User.objects.create_user(username="handler", password="pass", tenant=self.tenant, role="operator")
+        self.flow = TicketFlow.objects.create(name="故障流程", ticket_type="fault")
+        self.node1 = TicketNode.objects.create(flow=self.flow, name="一线受理", order=1, role_required="operator", auto_assign_rule="manual")
+        self.node2 = TicketNode.objects.create(flow=self.flow, name="处理中", order=2, role_required="operator")
+        self.node3 = TicketNode.objects.create(flow=self.flow, name="已解决", order=3, role_required="operator", is_terminal=True)
+        self.policy = SLAPolicy.objects.create(name="默认SLA", priority="high", response_minutes=60, resolve_minutes=480)
+        self.engine = TicketEngine()
+
+    def test_create_ticket(self):
+        ticket = self.engine.create_ticket(
+            data={"title": "数据库超时", "description": "连接池耗尽", "type": "fault", "priority": "high"},
+            submitter=self.submitter,
+        )
+        assert ticket.status == "pending"
+        assert ticket.current_node == self.node1
+        assert ticket.sla_policy == self.policy
+        assert ticket.ticket_no.startswith("TK-")
+
+    def test_assign_ticket(self):
+        ticket = self.engine.create_ticket(
+            data={"title": "测试", "type": "fault", "priority": "high"},
+            submitter=self.submitter,
+        )
+        self.engine.assign(ticket, self.handler, self.handler)
+        ticket.refresh_from_db()
+        assert ticket.status == "assigned"
+        assert ticket.assignee == self.handler
+        assert ticket.assigned_at is not None
+
+    def test_transition_ticket(self):
+        ticket = self.engine.create_ticket(
+            data={"title": "测试", "type": "fault", "priority": "high"},
+            submitter=self.submitter,
+        )
+        self.engine.assign(ticket, self.handler, self.handler)
+        self.engine.transition(ticket, self.node2, self.handler, comment="开始排查")
+        ticket.refresh_from_db()
+        assert ticket.status == "processing"
+        assert ticket.current_node == self.node2
+        assert ticket.transitions.count() == 2
+
+    def test_resolve_ticket(self):
+        ticket = self.engine.create_ticket(
+            data={"title": "测试", "type": "fault", "priority": "high"},
+            submitter=self.submitter,
+        )
+        self.engine.assign(ticket, self.handler, self.handler)
+        self.engine.resolve(ticket, self.handler, "已修复连接池配置")
+        ticket.refresh_from_db()
+        assert ticket.status == "resolved"
+        assert ticket.resolved_at is not None
+
+    def test_cancel_ticket(self):
+        ticket = self.engine.create_ticket(
+            data={"title": "测试", "type": "fault", "priority": "high"},
+            submitter=self.submitter,
+        )
+        self.engine.cancel(ticket, self.submitter, "问题已自行解决")
+        ticket.refresh_from_db()
+        assert ticket.status == "cancelled"
