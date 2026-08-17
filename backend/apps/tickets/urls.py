@@ -13,4 +13,7 @@ urlpatterns = [
     path("<uuid:pk>/transitions/", views.TicketTransitionListView.as_view(), name="ticket-transitions"),
     path("flows/", views.TicketFlowListView.as_view(), name="ticket-flow-list"),
     path("sla-policies/", views.SLAPolicyListView.as_view(), name="sla-policy-list"),
+    path("export/", views.TicketExportView.as_view(), name="ticket-export"),
+    path("import/", views.TicketImportView.as_view(), name="ticket-import"),
+    path("import/confirm/", views.TicketImportConfirmView.as_view(), name="ticket-import-confirm"),
 ]

@@ -190,3 +190,51 @@ class NotificationUnreadCountView(APIView):
     def get(self, request):
         count = Notification.objects.filter(user=request.user, is_read=False).count()
         return Response({"count": count})
+
+from .import_export import export_tickets_csv, parse_import_csv, confirm_import
+from django.core.cache import cache
+import uuid
+
+
+class TicketExportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = Ticket.objects.filter(tenant=get_tenant(request))
+        if request.user.role == "enterprise_user":
+            qs = qs.filter(submitter=request.user)
+        for param in ("type", "status", "priority"):
+            val = request.query_params.get(param)
+            if val:
+                qs = qs.filter(**{param: val})
+        return export_tickets_csv(qs)
+
+
+class TicketImportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ("admin", "operator"):
+            return Response({"detail": "无权限"}, status=403)
+        f = request.FILES.get("file")
+        if not f:
+            return Response({"detail": "请上传文件"}, status=400)
+        preview = parse_import_csv(f)
+        session_id = str(uuid.uuid4())
+        cache.set(f"ticket_import:{session_id}", preview, 600)
+        return Response({"session_id": session_id, "preview": preview, "count": len(preview)})
+
+
+class TicketImportConfirmView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ("admin", "operator"):
+            return Response({"detail": "无权限"}, status=403)
+        session_id = request.data.get("session_id")
+        preview = cache.get(f"ticket_import:{session_id}")
+        if not preview:
+            return Response({"detail": "导入数据已过期"}, status=400)
+        count = confirm_import(preview, get_tenant(request), request.user)
+        cache.delete(f"ticket_import:{session_id}")
+        return Response({"imported": count})

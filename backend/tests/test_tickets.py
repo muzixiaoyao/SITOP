@@ -289,3 +289,39 @@ class TestSLA(TestCase):
         )
         check_sla_timeouts()
         assert Notification.objects.filter(user=user, type="sla_warning").exists()
+
+
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+
+class TestTicketImportExport(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="测试企业")
+        self.user = User.objects.create_user(username="exporter", password="pass", tenant=self.tenant, role="admin")
+        self.client = APIClient()
+        token = RefreshToken.for_user(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
+
+    def test_export_tickets_csv(self):
+        flow = TicketFlow.objects.create(name="流程", ticket_type="fault")
+        node = TicketNode.objects.create(flow=flow, name="受理", order=1, role_required="operator")
+        policy = SLAPolicy.objects.create(name="SLA", priority="medium", response_minutes=60, resolve_minutes=480)
+        Ticket.objects.create(
+            tenant=self.tenant, ticket_no="TK-20260817-0001", title="测试导出",
+            type="fault", priority="medium", status="pending",
+            current_node=node, submitter=self.user, sla_policy=policy,
+        )
+        resp = self.client.get("/api/tickets/export/")
+        assert resp.status_code == 200
+        assert "text/csv" in resp["Content-Type"]
+        content = resp.content.decode("utf-8-sig")
+        assert "测试导出" in content
+
+    def test_import_tickets_csv(self):
+        SLAPolicy.objects.create(name="SLA", priority="medium", response_minutes=60, resolve_minutes=480)
+        csv_content = "标题,类型,优先级,描述\n导入测试工单,fault,medium,测试描述\n"
+        upload = SimpleUploadedFile("tickets.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        resp = self.client.post("/api/tickets/import/", {"file": upload}, format="multipart")
+        assert resp.status_code == 200
+        assert len(resp.data["preview"]) == 1
+        assert resp.data["preview"][0]["title"] == "导入测试工单"
