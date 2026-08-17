@@ -62,6 +62,36 @@ const router = createRouter({
       component: () => import('@/views/RepositoryView.vue'),
       meta: { requiresAuth: true },
     },
+    {
+      path: '/tickets',
+      name: 'tickets',
+      component: () => import('@/views/TicketsView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/tickets/create',
+      name: 'ticket-create',
+      component: () => import('@/views/TicketDetailView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/tickets/:id',
+      name: 'ticket-detail',
+      component: () => import('@/views/TicketDetailView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/kb',
+      name: 'kb',
+      component: () => import('@/views/KnowledgeBaseView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/kb/:slug',
+      name: 'kb-article',
+      component: () => import('@/views/ArticleDetailView.vue'),
+      meta: { requiresAuth: true },
+    },
   ],
 })
 
