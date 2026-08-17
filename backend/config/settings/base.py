@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "apps.tasks",
     "apps.reports",
     "apps.repository",
+    "apps.tickets",
 ]
 
 MIDDLEWARE = [
