@@ -25,3 +25,5 @@ k8s/
 .test_job_detail.sh
 .test_api.sh
 .check_smip_ns.sh
+docs/prototypes
+docs/superpowers
