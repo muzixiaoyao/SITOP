@@ -10,4 +10,6 @@ urlpatterns = [
     path("api/", include("apps.tasks.urls")),
     path("api/", include("apps.reports.urls")),
     path("api/", include("apps.repository.urls")),
+    path("api/tickets/", include("apps.tickets.urls")),
+    path("api/notifications/", include("apps.tickets.notification_urls")),
 ]

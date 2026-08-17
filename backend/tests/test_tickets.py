@@ -194,3 +194,70 @@ class TestTicketEngine(TestCase):
         self.engine.cancel(ticket, self.submitter, "问题已自行解决")
         ticket.refresh_from_db()
         assert ticket.status == "cancelled"
+
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
+
+
+class TestTicketAPI(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="测试企业")
+        self.user = User.objects.create_user(username="api_user", password="pass", tenant=self.tenant, role="operator")
+        self.client = APIClient()
+        token = RefreshToken.for_user(self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
+
+    def test_create_ticket_api(self):
+        SLAPolicy.objects.create(name="SLA", priority="high", response_minutes=60, resolve_minutes=480)
+        TicketFlow.objects.create(name="故障流程", ticket_type="fault")
+
+        resp = self.client.post("/api/tickets/", {
+            "title": "数据库超时",
+            "description": "连接池耗尽",
+            "type": "fault",
+            "priority": "high",
+        }, format="json")
+        assert resp.status_code == 201
+        assert resp.data["ticket_no"].startswith("TK-")
+        assert resp.data["status"] == "pending"
+
+    def test_list_tickets_api(self):
+        flow = TicketFlow.objects.create(name="流程", ticket_type="fault")
+        node = TicketNode.objects.create(flow=flow, name="受理", order=1, role_required="operator")
+        policy = SLAPolicy.objects.create(name="SLA", priority="medium", response_minutes=60, resolve_minutes=480)
+        Ticket.objects.create(
+            tenant=self.tenant, ticket_no="TK-20260817-0001", title="测试工单",
+            type="fault", priority="medium", status="pending",
+            current_node=node, submitter=self.user, sla_policy=policy,
+        )
+        resp = self.client.get("/api/tickets/")
+        assert resp.status_code == 200
+        assert len(resp.data["results"]) >= 1
+
+    def test_ticket_detail_api(self):
+        flow = TicketFlow.objects.create(name="流程", ticket_type="fault")
+        node = TicketNode.objects.create(flow=flow, name="受理", order=1, role_required="operator")
+        policy = SLAPolicy.objects.create(name="SLA", priority="medium", response_minutes=60, resolve_minutes=480)
+        ticket = Ticket.objects.create(
+            tenant=self.tenant, ticket_no="TK-20260817-0002", title="详情测试",
+            type="fault", priority="medium", status="pending",
+            current_node=node, submitter=self.user, sla_policy=policy,
+        )
+        resp = self.client.get(f"/api/tickets/{ticket.id}/")
+        assert resp.status_code == 200
+        assert resp.data["title"] == "详情测试"
+
+    def test_assign_ticket_api(self):
+        handler = User.objects.create_user(username="handler", password="pass", tenant=self.tenant, role="operator")
+        flow = TicketFlow.objects.create(name="流程", ticket_type="fault")
+        node = TicketNode.objects.create(flow=flow, name="受理", order=1, role_required="operator")
+        policy = SLAPolicy.objects.create(name="SLA", priority="medium", response_minutes=60, resolve_minutes=480)
+        ticket = Ticket.objects.create(
+            tenant=self.tenant, ticket_no="TK-20260817-0003", title="分派测试",
+            type="fault", priority="medium", status="pending",
+            current_node=node, submitter=self.user, sla_policy=policy,
+        )
+        resp = self.client.post(f"/api/tickets/{ticket.id}/assign/", {"assignee_id": str(handler.id)}, format="json")
+        assert resp.status_code == 200
+        ticket.refresh_from_db()
+        assert ticket.assignee == handler
