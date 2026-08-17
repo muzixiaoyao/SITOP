@@ -26,7 +26,13 @@ class User(AbstractUser):
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="users")
     role = models.CharField(
         max_length=20,
-        choices=[("admin", "管理员"), ("operator", "操作员"), ("viewer", "只读")],
+        choices=[
+            ("admin", "平台管理员"),  # 保留 admin 值，向后兼容
+            ("operator", "运维员"),
+            ("viewer", "只读"),
+            ("enterprise_admin", "企业管理员"),
+            ("enterprise_user", "企业员工"),
+        ],
         default="operator",
     )
 
