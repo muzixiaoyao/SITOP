@@ -89,9 +89,15 @@ Ticket（工单）
 ├── TicketFlow（流转模板）
 │   └── TicketNode（流程节点）×N
 │
+├── TicketTemplate（工单模板）    预填表单模板
 ├── TicketTransition（流转记录）×N
 ├── TicketComment（工单评论）×N
 └── TicketAttachment（附件）×N
+
+Article（知识库文章）
+├── category: FK → ArticleCategory 分类
+├── author: FK → User              作者
+└── (独立模块，与工单松耦合)
 ```
 
 ### 3.2 Ticket 工单主表
@@ -111,6 +117,7 @@ Ticket（工单）
 | `assignee` | FK → User (null) | 当前处理人 |
 | `related_job` | FK → Job (null) | 关联的 SITOP 任务 |
 | `sla_policy` | FK → SLAPolicy | 适用的 SLA 策略 |
+| `custom_data` | JSONField (null) | 工单模板自定义字段数据 |
 | `first_response_at` | DateTimeField (null) | 首次响应时间（响应 SLA 终点） |
 | `assigned_at` | DateTimeField (null) | 首次分派时间（处理 SLA 起点） |
 | `resolved_at` | DateTimeField (null) | 解决时间（处理 SLA 终点） |
@@ -408,6 +415,11 @@ class TicketEngine:
 | `/tickets/:id` | 工单详情页 | 所有角色（数据按权限过滤） |
 | `/tickets/flows` | 流程模板管理 | `platform_admin` |
 | `/tickets/sla` | SLA 策略管理 | `platform_admin` |
+| `/tickets/templates` | 工单模板管理 | `platform_admin` |
+| `/kb` | 知识库首页 | 所有角色 |
+| `/kb/search` | 搜索结果页 | 所有角色 |
+| `/kb/:slug` | 文章详情页 | 所有角色 |
+| `/kb/admin` | 文章管理 | `platform_admin` |
 
 ### 8.2 侧边栏菜单
 
@@ -423,7 +435,10 @@ class TicketEngine:
   ├ 我的工单
   ├ 全部工单        ← ICT 角色 + enterprise_admin 可见
   ├ 流程模板        ← platform_admin 可见
-  └ SLA 策略        ← platform_admin 可见
+  ├ SLA 策略        ← platform_admin 可见
+  └ 工单模板        ← platform_admin 可见
+───────────
+知识库              ← 所有角色可见
 ───────────
 审计日志            ← ICT 角色可见
 用户管理            ← platform_admin 可见
@@ -503,8 +518,33 @@ class TicketEngine:
 | `PUT` | `/api/tickets/flows/{id}/` | 编辑流程模板 |
 | `GET` | `/api/tickets/sla-policies/` | SLA 策略列表 |
 | `POST` | `/api/tickets/sla-policies/` | 创建 SLA 策略 |
+| `GET` | `/api/tickets/templates/` | 工单模板列表 |
+| `POST` | `/api/tickets/templates/` | 创建工单模板 |
+| `PUT` | `/api/tickets/templates/{id}/` | 编辑工单模板 |
+| `DELETE` | `/api/tickets/templates/{id}/` | 删除工单模板 |
 
-### 9.4 通知接口
+### 9.4 导入导出
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/tickets/export/` | 导出工单（CSV） |
+| `POST` | `/api/tickets/import/` | 导入工单（CSV 上传 + 预览） |
+| `POST` | `/api/tickets/import/confirm/` | 确认导入 |
+
+### 9.5 知识库
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/kb/articles/` | 文章列表（已发布） |
+| `GET` | `/api/kb/articles/{slug}/` | 文章详情 |
+| `GET` | `/api/kb/articles/search/?q=` | 搜索 |
+| `GET` | `/api/kb/categories/` | 分类列表 |
+| `POST` | `/api/kb/articles/` | 创建文章（仅 admin） |
+| `PUT` | `/api/kb/articles/{id}/` | 编辑文章 |
+| `DELETE` | `/api/kb/articles/{id}/` | 删除文章 |
+| `POST` | `/api/kb/categories/` | 创建分类 |
+
+### 9.6 通知接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -541,13 +581,135 @@ class TicketEngine:
 
 ---
 
-## 11. 不做的事情（YAGNI）
+## 11. 工单导入导出
+
+### 11.1 导出
+
+- **格式**：CSV（UTF-8 with BOM，兼容 Excel 中文）
+- **范围**：支持按当前筛选条件导出（类型、优先级、状态、日期范围）
+- **字段**：工单编号、标题、类型、优先级、状态、提交人、处理人、创建时间、解决时间、关闭时间
+- **权限**：`platform_admin` / `operator` / `enterprise_admin` 可导出，`enterprise_user` 只能导出自己的工单
+- **入口**：工单列表页顶部“导出”按钮
+
+### 11.2 导入
+
+- **格式**：CSV（UTF-8/GBK 自适应，复用现有服务器导入的解码策略）
+- **必填字段**：标题、类型、优先级
+- **可选字段**：描述、提交人（按用户名匹配）
+- **导入后状态**：所有导入工单初始状态为 `pending`
+- **权限**：仅 `platform_admin` / `operator` 可导入
+- **入口**：工单列表页“导入”按钮，上传 CSV 后预览确认再提交
+
+---
+
+## 12. 工单模板（预设表单）
+
+### 12.1 概念
+
+工单模板 ≠ 流程模板（TicketFlow）。工单模板是**预填表单**，让客户快速提交标准化信息。
+
+### 12.2 TicketTemplate 模型
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | UUIDField | 主键 |
+| `name` | CharField(100) | 模板名称，如“服务器故障报告” |
+| `description` | TextField | 模板说明 |
+| `ticket_type` | CharField(20) | 对应工单类型 |
+| `fields` | JSONField | 自定义字段定义 |
+| `is_active` | BooleanField | 是否启用 |
+| `order` | IntegerField | 排序 |
+| `created_at` | DateTimeField | 创建时间 |
+
+### 12.3 fields 示例
+
+```json
+{
+  "custom_fields": [
+    {"name": "server_ip", "label": "故障服务器IP", "type": "text", "required": true},
+    {"name": "error_msg", "label": "错误信息", "type": "textarea", "required": false},
+    {"name": "impact_level", "label": "影响范围", "type": "select", "options": ["单机", "部分服务", "全部服务"], "required": true}
+  ]
+}
+```
+
+### 12.4 前端交互
+
+- 创建工单时，先选择工单模板（或“自由工单”）
+- 选择模板后，表单动态渲染自定义字段
+- 提交时，自定义字段值存入 `Ticket.description`（格式化为 Markdown）或新增 `Ticket.custom_data` JSONField
+
+### 12.5 设计要点
+
+- 工单模板由 `platform_admin` 管理
+- 客户侧只看到启用的模板列表
+- 不选模板也可以直接提交自由格式工单
+
+---
+
+## 13. 知识库 / FAQ
+
+### 13.1 概念
+
+供客户和企业用户自助查阅的常见问题和运维知识文章，减少重复工单。
+
+### 13.2 Article 模型
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | UUIDField | 主键 |
+| `title` | CharField(200) | 文章标题 |
+| `slug` | SlugField | URL 友好标识，如 `reset-password` |
+| `content` | TextField | 文章内容（Markdown） |
+| `category` | FK → ArticleCategory | 分类 |
+| `tags` | CharField(500) | 标签，逗号分隔 |
+| `is_published` | BooleanField | 是否发布 |
+| `view_count` | PositiveIntegerField | 浏览次数 |
+| `author` | FK → User | 作者 |
+| `created_at` | DateTimeField | 创建时间 |
+| `updated_at` | DateTimeField | 更新时间 |
+
+### 13.3 ArticleCategory 模型
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | UUIDField | 主键 |
+| `name` | CharField(50) | 分类名称，如“账号管理”、“常见故障” |
+| `order` | IntegerField | 排序 |
+
+### 13.4 前端页面
+
+| 路由 | 页面 | 可见角色 |
+|------|------|----------|
+| `/kb` | 知识库首页（分类列表 + 热门文章） | 所有角色 |
+| `/kb/search?q=` | 搜索结果页 | 所有角色 |
+| `/kb/:slug` | 文章详情页 | 所有角色 |
+| `/kb/admin` | 文章管理（CRUD） | `platform_admin` |
+
+### 13.5 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/kb/articles/` | 文章列表（已发布） |
+| `GET` | `/api/kb/articles/{slug}/` | 文章详情 |
+| `GET` | `/api/kb/articles/search/?q=` | 搜索（标题 + 内容全文匹配） |
+| `GET` | `/api/kb/categories/` | 分类列表 |
+| `POST` | `/api/kb/articles/` | 创建文章（仅 `platform_admin`） |
+| `PUT` | `/api/kb/articles/{id}/` | 编辑文章 |
+| `DELETE` | `/api/kb/articles/{id}/` | 删除文章 |
+
+### 13.6 设计要点
+
+- 搜索使用 PostgreSQL `__icontains` 或 `__search`（全文检索）
+- 工单创建页可展示“相关文章”推荐（按工单类型匹配分类）
+- 知识库对 `enterprise_user` 也可见（鼓励自助解决）
+
+---
+
+## 14. 不做的事情（YAGNI）
 
 - ❌ 独立门户页面（`/portal`）—— 不做，统一界面按角色渲染菜单
 - ❌ 子账号管理 —— 不做，企业管理员不能管理子账号
 - ❌ 用户自定义通知偏好 —— 不做，先使用固定通知规则
-- ❌ 工单导入导出 —— 不做，后续迭代
-- ❌ 工单模板（预设表单）—— 不做，先支持自由描述
-- ❌ 知识库/FAQ —— 不做
 - ❌ 客户满意度评价 —— 不做，后续迭代
 - ❌ 工单合并/拆分 —— 不做
