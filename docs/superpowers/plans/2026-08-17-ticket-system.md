@@ -29,7 +29,20 @@
 | `backend/apps/tickets/notifications.py` | 通知发送逻辑 |
 | `backend/apps/tickets/celery_tasks.py` | Celery 定时任务（SLA 扫描、邮件发送） |
 | `backend/apps/tickets/ticket_no.py` | 工单编号生成器 |
+| `backend/apps/tickets/import_export.py` | 工单导入导出（CSV） |
 | `backend/tests/test_tickets.py` | 工单模块测试 |
+
+### 知识库模块新增文件
+
+| 文件 | 职责 |
+|------|------|
+| `backend/apps/kb/__init__.py` | App 初始化 |
+| `backend/apps/kb/apps.py` | App 配置 |
+| `backend/apps/kb/models.py` | Article, ArticleCategory |
+| `backend/apps/kb/serializers.py` | DRF 序列化器 |
+| `backend/apps/kb/views.py` | DRF 视图 |
+| `backend/apps/kb/urls.py` | URL 路由 |
+| `backend/tests/test_kb.py` | 知识库测试 |
 
 ### 后端修改文件
 
@@ -37,8 +50,8 @@
 |------|----------|
 | `backend/apps/accounts/models.py` | User.role 新增 choices |
 | `backend/apps/accounts/permissions.py` | 新增企业角色权限类 |
-| `backend/config/settings/base.py` | INSTALLED_APPS 新增 `apps.tickets` |
-| `backend/config/urls.py` | 新增 tickets 和 notifications URL |
+| `backend/config/settings/base.py` | INSTALLED_APPS 新增 `apps.tickets` 和 `apps.kb` |
+| `backend/config/urls.py` | 新增 tickets、notifications 和 kb URL |
 | `backend/config/celery.py` | 注册 SLA 扫描定时任务 |
 | `backend/tests/conftest.py` | 新增工单相关 fixture |
 
@@ -47,14 +60,17 @@
 | 文件 | 职责 |
 |------|------|
 | `frontend/src/api/tickets.ts` | 工单 API 封装 |
+| `frontend/src/api/kb.ts` | 知识库 API 封装 |
 | `frontend/src/views/TicketsView.vue` | 工单列表页 |
 | `frontend/src/views/TicketDetailView.vue` | 工单详情页 |
+| `frontend/src/views/KnowledgeBaseView.vue` | 知识库首页 |
+| `frontend/src/views/ArticleDetailView.vue` | 文章详情页 |
 
 ### 前端修改文件
 
 | 文件 | 修改内容 |
 |------|----------|
-| `frontend/src/router/index.ts` | 新增 tickets 路由 |
+| `frontend/src/router/index.ts` | 新增 tickets 和 kb 路由 |
 | `frontend/src/components/AppLayout.vue` | 新增工单菜单、通知铃铛、角色菜单控制 |
 | `frontend/src/stores/auth.ts` | 新增角色判断辅助方法 |
 
@@ -2175,7 +2191,841 @@ git commit -m "feat(frontend): add ticket menu, notification badge, and role-bas
 
 ---
 
-## Task 11: 集成测试与最终验证
+## Task 11: 工单导入导出
+
+**Files:**
+- Create: `backend/apps/tickets/import_export.py`
+- Modify: `backend/apps/tickets/views.py`
+- Modify: `backend/apps/tickets/urls.py`
+- Modify: `frontend/src/views/TicketsView.vue`
+- Test: `backend/tests/test_tickets.py`
+
+- [ ] **Step 1: 编写导入导出测试**
+
+```python
+# backend/tests/test_tickets.py — 追加
+import io
+import csv
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+
+@pytest.mark.django_db
+class TestTicketImportExport:
+    @pytest.fixture
+    def api_client(self):
+        tenant = Tenant.objects.create(name="测试企业")
+        user = User.objects.create_user(username="exporter", password="pass", tenant=tenant, role="admin")
+        client = APIClient()
+        token = RefreshToken.for_user(user)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
+        return client, user, tenant
+
+    def test_export_tickets_csv(self, api_client):
+        client, user, tenant = api_client
+        flow = TicketFlow.objects.create(name="流程", ticket_type="fault")
+        node = TicketNode.objects.create(flow=flow, name="受理", order=1, role_required="operator")
+        policy = SLAPolicy.objects.create(name="SLA", priority="medium", response_minutes=60, resolve_minutes=480)
+        Ticket.objects.create(
+            tenant=tenant, ticket_no="TK-20260817-0001", title="测试导出",
+            type="fault", priority="medium", status="pending",
+            current_node=node, submitter=user, sla_policy=policy,
+        )
+        resp = client.get("/api/tickets/export/")
+        assert resp.status_code == 200
+        assert resp["Content-Type"] == "text/csv"
+        content = resp.content.decode("utf-8-sig")
+        assert "测试导出" in content
+
+    def test_import_tickets_csv(self, api_client):
+        client, user, tenant = api_client
+        SLAPolicy.objects.create(name="SLA", priority="medium", response_minutes=60, resolve_minutes=480)
+        csv_content = "标题,类型,优先级,描述\n导入测试工单,fault,medium,测试描述\n"
+        upload = SimpleUploadedFile("tickets.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        resp = client.post("/api/tickets/import/", {"file": upload}, format="multipart")
+        assert resp.status_code == 200
+        assert len(resp.data["preview"]) == 1
+        assert resp.data["preview"][0]["title"] == "导入测试工单"
+```
+
+- [ ] **Step 2: 实现导入导出逻辑**
+
+```python
+# backend/apps/tickets/import_export.py
+import csv
+import io
+from django.http import HttpResponse
+from .models import Ticket, SLAPolicy
+from .ticket_no import generate_ticket_no
+
+
+EXPORT_FIELDS = ["ticket_no", "title", "type", "priority", "status", "submitter_name", "assignee_name", "created_at", "resolved_at", "closed_at"]
+
+
+def export_tickets_csv(queryset) -> HttpResponse:
+    """导出工单为 CSV（UTF-8 with BOM）"""
+    response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
+    response["Content-Disposition"] = 'attachment; filename="tickets_export.csv"'
+    response.write("\ufeff")  # BOM
+    writer = csv.writer(response)
+    writer.writerow(["工单编号", "标题", "类型", "优先级", "状态", "提交人", "处理人", "创建时间", "解决时间", "关闭时间"])
+    for t in queryset.select_related("submitter", "assignee"):
+        writer.writerow([
+            t.ticket_no, t.title, t.get_type_display(), t.get_priority_display(),
+            t.get_status_display(), t.submitter.username if t.submitter else "",
+            t.assignee.username if t.assignee else "",
+            t.created_at.isoformat(), t.resolved_at.isoformat() if t.resolved_at else "",
+            t.closed_at.isoformat() if t.closed_at else "",
+        ])
+    return response
+
+
+def parse_import_csv(file) -> list[dict]:
+    """解析导入的 CSV 文件，返回预览数据列表"""
+    raw = file.read()
+    # 自适应 UTF-8/GBK
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("gbk")
+    reader = csv.DictReader(io.StringIO(text))
+    results = []
+    for row in reader:
+        results.append({
+            "title": row.get("标题", "").strip(),
+            "type": row.get("类型", "fault").strip(),
+            "priority": row.get("优先级", "medium").strip(),
+            "description": row.get("描述", "").strip(),
+        })
+    return results
+
+
+def confirm_import(parsed_data: list[dict], tenant, submitter) -> int:
+    """确认导入，创建工单"""
+    count = 0
+    for item in parsed_data:
+        if not item["title"]:
+            continue
+        from .engine import TicketEngine
+        engine = TicketEngine()
+        engine.create_ticket(data=item, submitter=submitter)
+        count += 1
+    return count
+```
+
+- [ ] **Step 3: 在 views.py 中追加导入导出视图**
+
+```python
+# backend/apps/tickets/views.py — 追加
+from .import_export import export_tickets_csv, parse_import_csv, confirm_import
+from django.core.cache import cache
+import uuid
+
+
+class TicketExportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = Ticket.objects.filter(tenant=get_tenant(request))
+        if request.user.role == "enterprise_user":
+            qs = qs.filter(submitter=request.user)
+        # 应用筛选条件
+        for param in ("type", "status", "priority"):
+            val = request.query_params.get(param)
+            if val:
+                qs = qs.filter(**{param: val})
+        return export_tickets_csv(qs)
+
+
+class TicketImportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ("admin", "operator"):
+            return Response({"detail": "无权限"}, status=403)
+        f = request.FILES.get("file")
+        if not f:
+            return Response({"detail": "请上传文件"}, status=400)
+        preview = parse_import_csv(f)
+        # 缓存预览结果 10 分钟
+        session_id = str(uuid.uuid4())
+        cache.set(f"ticket_import:{session_id}", preview, 600)
+        return Response({"session_id": session_id, "preview": preview, "count": len(preview)})
+
+
+class TicketImportConfirmView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role not in ("admin", "operator"):
+            return Response({"detail": "无权限"}, status=403)
+        session_id = request.data.get("session_id")
+        preview = cache.get(f"ticket_import:{session_id}")
+        if not preview:
+            return Response({"detail": "导入数据已过期"}, status=400)
+        count = confirm_import(preview, get_tenant(request), request.user)
+        cache.delete(f"ticket_import:{session_id}")
+        return Response({"imported": count})
+```
+
+- [ ] **Step 4: 注册 URL**
+
+```python
+# backend/apps/tickets/urls.py — 追加
+path("export/", views.TicketExportView.as_view(), name="ticket-export"),
+path("import/", views.TicketImportView.as_view(), name="ticket-import"),
+path("import/confirm/", views.TicketImportConfirmView.as_view(), name="ticket-import-confirm"),
+```
+
+- [ ] **Step 5: 运行测试**
+
+```bash
+cd backend && python -m pytest tests/test_tickets.py::TestTicketImportExport -v
+```
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add backend/apps/tickets/import_export.py backend/apps/tickets/views.py backend/apps/tickets/urls.py backend/tests/test_tickets.py
+git commit -m "feat(tickets): add ticket import/export (CSV with UTF-8/GBK support)"
+```
+
+---
+
+## Task 12: 工单模板（预设表单）
+
+**Files:**
+- Modify: `backend/apps/tickets/models.py`
+- Modify: `backend/apps/tickets/serializers.py`
+- Modify: `backend/apps/tickets/views.py`
+- Modify: `backend/apps/tickets/urls.py`
+- Test: `backend/tests/test_tickets.py`
+
+- [ ] **Step 1: 编写测试**
+
+```python
+# backend/tests/test_tickets.py — 追加
+from apps.tickets.models import TicketTemplate
+
+
+@pytest.mark.django_db
+class TestTicketTemplate:
+    def test_create_ticket_template(self):
+        template = TicketTemplate.objects.create(
+            name="服务器故障报告",
+            description="用于报告服务器相关故障",
+            ticket_type="fault",
+            fields={"custom_fields": [
+                {"name": "server_ip", "label": "服务器IP", "type": "text", "required": True},
+            ]},
+        )
+        assert template.name == "服务器故障报告"
+        assert len(template.fields["custom_fields"]) == 1
+
+    def test_template_api_list(self):
+        from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
+        tenant = Tenant.objects.create(name="测试")
+        user = User.objects.create_user(username="tpl_admin", password="pass", tenant=tenant, role="admin")
+        TicketTemplate.objects.create(name="模板1", ticket_type="fault", fields={})
+        client = APIClient()
+        token = RefreshToken.for_user(user)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
+        resp = client.get("/api/tickets/templates/")
+        assert resp.status_code == 200
+```
+
+- [ ] **Step 2: 添加 TicketTemplate 模型**
+
+```python
+# backend/apps/tickets/models.py — 追加
+class TicketTemplate(models.Model):
+    """工单模板（预填表单）"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    ticket_type = models.CharField(
+        max_length=20,
+        choices=[("fault", "故障"), ("request", "需求"), ("internal", "内部请求"), ("change", "变更")],
+    )
+    fields = models.JSONField(default=dict, blank=True, help_text="自定义字段定义")
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "-created_at"]
+        verbose_name = "工单模板"
+
+    def __str__(self):
+        return self.name
+```
+
+- [ ] **Step 3: 添加序列化器和视图**
+
+```python
+# backend/apps/tickets/serializers.py — 追加
+class TicketTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TicketTemplate
+        fields = "__all__"
+```
+
+```python
+# backend/apps/tickets/views.py — 追加
+class TicketTemplateListView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TicketTemplateSerializer
+
+    def get_queryset(self):
+        qs = TicketTemplate.objects.filter(is_active=True)
+        if self.request.method == "POST":
+            return TicketTemplate.objects.all()
+        return qs
+
+
+class TicketTemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+    serializer_class = TicketTemplateSerializer
+    queryset = TicketTemplate.objects.all()
+```
+
+- [ ] **Step 4: 注册 URL**
+
+```python
+# backend/apps/tickets/urls.py — 追加
+path("templates/", views.TicketTemplateListView.as_view(), name="ticket-template-list"),
+path("templates/<uuid:pk>/", views.TicketTemplateDetailView.as_view(), name="ticket-template-detail"),
+```
+
+- [ ] **Step 5: 生成 migration 并运行测试**
+
+```bash
+cd backend && python manage.py makemigrations tickets
+cd backend && python manage.py migrate
+cd backend && python -m pytest tests/test_tickets.py::TestTicketTemplate -v
+```
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add backend/apps/tickets/models.py backend/apps/tickets/serializers.py backend/apps/tickets/views.py backend/apps/tickets/urls.py backend/apps/tickets/migrations/ backend/tests/test_tickets.py
+git commit -m "feat(tickets): add ticket templates (pre-filled forms)"
+```
+
+---
+
+## Task 13: 知识库 / FAQ
+
+**Files:**
+- Create: `backend/apps/kb/__init__.py`
+- Create: `backend/apps/kb/apps.py`
+- Create: `backend/apps/kb/models.py`
+- Create: `backend/apps/kb/serializers.py`
+- Create: `backend/apps/kb/views.py`
+- Create: `backend/apps/kb/urls.py`
+- Modify: `backend/config/settings/base.py`
+- Modify: `backend/config/urls.py`
+- Create: `frontend/src/api/kb.ts`
+- Create: `frontend/src/views/KnowledgeBaseView.vue`
+- Create: `frontend/src/views/ArticleDetailView.vue`
+- Modify: `frontend/src/router/index.ts`
+- Test: `backend/tests/test_kb.py`
+
+- [ ] **Step 1: 创建 kb app 并编写模型**
+
+```python
+# backend/apps/kb/__init__.py
+# (空文件)
+```
+
+```python
+# backend/apps/kb/apps.py
+from django.apps import AppConfig
+
+
+class KbConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.kb"
+    verbose_name = "知识库"
+```
+
+```python
+# backend/apps/kb/models.py
+import uuid
+from django.db import models
+from apps.accounts.models import User
+
+
+class ArticleCategory(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=50, unique=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order"]
+        verbose_name = "文章分类"
+
+    def __str__(self):
+        return self.name
+
+
+class Article(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=200, unique=True)
+    content = models.TextField()
+    category = models.ForeignKey(ArticleCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name="articles")
+    tags = models.CharField(max_length=500, blank=True, help_text="逗号分隔")
+    is_published = models.BooleanField(default=False)
+    view_count = models.PositiveIntegerField(default=0)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="articles")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        verbose_name = "文章"
+
+    def __str__(self):
+        return self.title
+```
+
+- [ ] **Step 2: 编写测试**
+
+```python
+# backend/tests/test_kb.py
+import pytest
+from apps.kb.models import Article, ArticleCategory
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
+from apps.accounts.models import Tenant, User
+
+
+@pytest.mark.django_db
+class TestKnowledgeBase:
+    def test_create_article(self):
+        cat = ArticleCategory.objects.create(name="常见故障")
+        tenant = Tenant.objects.create(name="ICT")
+        user = User.objects.create_user(username="author", password="pass", tenant=tenant, role="admin")
+        article = Article.objects.create(
+            title="如何重置密码", slug="reset-password",
+            content="## 步骤\n1. 登录管理后台\n2. 找到用户管理",
+            category=cat, is_published=True, author=user,
+        )
+        assert article.title == "如何重置密码"
+        assert article.slug == "reset-password"
+
+    def test_article_list_api(self):
+        cat = ArticleCategory.objects.create(name="FAQ")
+        tenant = Tenant.objects.create(name="ICT")
+        user = User.objects.create_user(username="kb_user", password="pass", tenant=tenant, role="admin")
+        Article.objects.create(title="文章1", slug="art-1", content="内容", category=cat, is_published=True, author=user)
+        Article.objects.create(title="草稿", slug="draft", content="未发布", category=cat, is_published=False, author=user)
+
+        client = APIClient()
+        token = RefreshToken.for_user(user)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
+        resp = client.get("/api/kb/articles/")
+        assert resp.status_code == 200
+        # 只返回已发布的文章
+        assert len(resp.data["results"]) == 1
+
+    def test_article_search(self):
+        cat = ArticleCategory.objects.create(name="FAQ")
+        tenant = Tenant.objects.create(name="ICT")
+        user = User.objects.create_user(username="searcher", password="pass", tenant=tenant, role="admin")
+        Article.objects.create(title="SSH连接失败", slug="ssh-fail", content="检查防火墙配置", category=cat, is_published=True, author=user)
+        Article.objects.create(title="密码重置", slug="pwd-reset", content="忘记密码的处理流程", category=cat, is_published=True, author=user)
+
+        client = APIClient()
+        token = RefreshToken.for_user(user)
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
+        resp = client.get("/api/kb/articles/search/?q=SSH")
+        assert resp.status_code == 200
+        assert len(resp.data) >= 1
+        assert resp.data[0]["title"] == "SSH连接失败"
+```
+
+- [ ] **Step 3: 编写序列化器和视图**
+
+```python
+# backend/apps/kb/serializers.py
+from rest_framework import serializers
+from .models import Article, ArticleCategory
+
+
+class ArticleCategorySerializer(serializers.ModelSerializer):
+    article_count = serializers.IntegerField(read_only=True, default=0)
+
+    class Meta:
+        model = ArticleCategory
+        fields = ["id", "name", "order", "article_count"]
+
+
+class ArticleListSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source="category.name", read_only=True, default="")
+    author_name = serializers.CharField(source="author.username", read_only=True)
+
+    class Meta:
+        model = Article
+        fields = ["id", "title", "slug", "category", "category_name", "tags",
+                  "is_published", "view_count", "author_name", "created_at", "updated_at"]
+
+
+class ArticleDetailSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source="category.name", read_only=True, default="")
+    author_name = serializers.CharField(source="author.username", read_only=True)
+
+    class Meta:
+        model = Article
+        fields = "__all__"
+```
+
+```python
+# backend/apps/kb/views.py
+from rest_framework import generics, status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from django.db.models import Q, Count
+from apps.accounts.permissions import IsAdmin
+from .models import Article, ArticleCategory
+from .serializers import ArticleListSerializer, ArticleDetailSerializer, ArticleCategorySerializer
+
+
+class ArticleListView(generics.ListAPIView):
+    serializer_class = ArticleListSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Article.objects.filter(is_published=True).select_related("category", "author")
+
+
+class ArticleDetailView(generics.RetrieveAPIView):
+    serializer_class = ArticleDetailSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = "slug"
+
+    def get_queryset(self):
+        return Article.objects.filter(is_published=True)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        # 增加浏览次数
+        Article.objects.filter(pk=instance.pk).update(view_count=models.F("view_count") + 1)
+        return super().retrieve(request, *args, **kwargs)
+
+
+class ArticleSearchView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        q = request.query_params.get("q", "").strip()
+        if not q:
+            return Response([])
+        articles = Article.objects.filter(
+            is_published=True,
+        ).filter(
+            Q(title__icontains=q) | Q(content__icontains=q) | Q(tags__icontains=q)
+        ).select_related("category")[:20]
+        return Response(ArticleListSerializer(articles, many=True).data)
+
+
+class ArticleManageView(generics.ListCreateAPIView):
+    """管理端：所有文章（含草稿）"""
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return ArticleDetailSerializer
+        return ArticleListSerializer
+
+    def get_queryset(self):
+        return Article.objects.all().select_related("category", "author")
+
+    def perform_create(self, serializer):
+        serializer.save(author=self.request.user)
+
+
+class ArticleUpdateView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+    serializer_class = ArticleDetailSerializer
+    queryset = Article.objects.all()
+
+
+class CategoryListView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ArticleCategorySerializer
+
+    def get_queryset(self):
+        return ArticleCategory.objects.annotate(
+            article_count=Count("articles", filter=Q(articles__is_published=True))
+        )
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [IsAuthenticated(), IsAdmin()]
+        return super().get_permissions()
+```
+
+```python
+# backend/apps/kb/urls.py
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("articles/", views.ArticleListView.as_view(), name="kb-article-list"),
+    path("articles/manage/", views.ArticleManageView.as_view(), name="kb-article-manage"),
+    path("articles/manage/<uuid:pk>/", views.ArticleUpdateView.as_view(), name="kb-article-update"),
+    path("articles/search/", views.ArticleSearchView.as_view(), name="kb-article-search"),
+    path("articles/<slug:slug>/", views.ArticleDetailView.as_view(), name="kb-article-detail"),
+    path("categories/", views.CategoryListView.as_view(), name="kb-category-list"),
+]
+```
+
+- [ ] **Step 4: 注册 app 和 URL**
+
+```python
+# backend/config/settings/base.py — INSTALLED_APPS 追加
+"apps.kb",
+```
+
+```python
+# backend/config/urls.py — 追加
+path("api/kb/", include("apps.kb.urls")),
+```
+
+- [ ] **Step 5: 生成 migration 并运行测试**
+
+```bash
+cd backend && python manage.py makemigrations kb
+cd backend && python manage.py migrate
+cd backend && python -m pytest tests/test_kb.py -v
+```
+
+- [ ] **Step 6: 提交后端**
+
+```bash
+git add backend/apps/kb/ backend/config/settings/base.py backend/config/urls.py backend/tests/test_kb.py
+git commit -m "feat(kb): add knowledge base / FAQ module (articles, categories, search)"
+```
+
+- [ ] **Step 7: 前端 — 知识库 API 和页面**
+
+```typescript
+// frontend/src/api/kb.ts
+import request from './request'
+
+export interface Article {
+  id: string
+  title: string
+  slug: string
+  content?: string
+  category: string
+  category_name: string
+  tags: string
+  is_published: boolean
+  view_count: number
+  author_name: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ArticleCategory {
+  id: string
+  name: string
+  order: number
+  article_count: number
+}
+
+export const kbApi = {
+  listArticles() {
+    return request.get('/kb/articles/')
+  },
+  getArticle(slug: string) {
+    return request.get<Article>(`/kb/articles/${slug}/`)
+  },
+  search(q: string) {
+    return request.get<Article[]>('/kb/articles/search/', { params: { q } })
+  },
+  listCategories() {
+    return request.get<ArticleCategory[]>('/kb/categories/')
+  },
+  createArticle(data: Partial<Article>) {
+    return request.post('/kb/articles/manage/', data)
+  },
+  updateArticle(id: string, data: Partial<Article>) {
+    return request.put(`/kb/articles/manage/${id}/`, data)
+  },
+  deleteArticle(id: string) {
+    return request.delete(`/kb/articles/manage/${id}/`)
+  },
+}
+```
+
+```typescript
+// frontend/src/router/index.ts — 追加路由
+{
+  path: '/kb',
+  name: 'kb',
+  component: () => import('@/views/KnowledgeBaseView.vue'),
+  meta: { requiresAuth: true },
+},
+{
+  path: '/kb/:slug',
+  name: 'kb-article',
+  component: () => import('@/views/ArticleDetailView.vue'),
+  meta: { requiresAuth: true },
+},
+```
+
+- [ ] **Step 8: 创建知识库页面**
+
+```vue
+<!-- frontend/src/views/KnowledgeBaseView.vue -->
+<template>
+  <AppLayout>
+    <div class="kb-page">
+      <div class="kb-header">
+        <h2>知识库</h2>
+        <el-input v-model="searchQuery" placeholder="搜索文章..." clearable @keyup.enter="handleSearch" style="width: 300px;">
+          <template #append>
+            <el-button @click="handleSearch">搜索</el-button>
+          </template>
+        </el-input>
+      </div>
+
+      <!-- 搜索结果 -->
+      <div v-if="searchResults" class="search-results">
+        <h3>搜索结果 ({{ searchResults.length }})</h3>
+        <el-card v-for="article in searchResults" :key="article.id" class="article-card" @click="$router.push(`/kb/${article.slug}`)">
+          <h4>{{ article.title }}</h4>
+          <el-tag size="small">{{ article.category_name }}</el-tag>
+          <span class="meta">浏览 {{ article.view_count }}</span>
+        </el-card>
+        <el-button v-if="searchResults.length" text @click="searchResults = null">清除搜索</el-button>
+      </div>
+
+      <!-- 分类列表 -->
+      <div v-else>
+        <el-row :gutter="16">
+          <el-col :span="8" v-for="cat in categories" :key="cat.id">
+            <el-card class="category-card">
+              <h4>{{ cat.name }}</h4>
+              <p>{{ cat.article_count }} 篇文章</p>
+            </el-card>
+          </el-col>
+        </el-row>
+
+        <!-- 最新文章 -->
+        <h3 style="margin-top: 24px;">最新文章</h3>
+        <el-table :data="articles" @row-click="(row: any) => $router.push(`/kb/${row.slug}`)" stripe>
+          <el-table-column prop="title" label="标题" />
+          <el-table-column prop="category_name" label="分类" width="120" />
+          <el-table-column prop="view_count" label="浏览" width="80" />
+          <el-table-column prop="updated_at" label="更新时间" width="170">
+            <template #default="{ row }">{{ new Date(row.updated_at).toLocaleDateString() }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
+  </AppLayout>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import AppLayout from '@/components/AppLayout.vue'
+import { kbApi, type Article, type ArticleCategory } from '@/api/kb'
+
+const categories = ref<ArticleCategory[]>([])
+const articles = ref<Article[]>([])
+const searchQuery = ref('')
+const searchResults = ref<Article[] | null>(null)
+
+async function handleSearch() {
+  if (!searchQuery.value.trim()) { searchResults.value = null; return }
+  const { data } = await kbApi.search(searchQuery.value)
+  searchResults.value = data
+}
+
+onMounted(async () => {
+  const [catResp, artResp] = await Promise.all([kbApi.listCategories(), kbApi.listArticles()])
+  categories.value = catResp.data.results || catResp.data
+  articles.value = artResp.data.results || artResp.data
+})
+</script>
+
+<style scoped>
+.kb-page { max-width: 1200px; margin: 0 auto; }
+.kb-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.category-card { cursor: pointer; margin-bottom: 16px; }
+.article-card { cursor: pointer; margin-bottom: 8px; }
+.meta { color: #909399; font-size: 12px; margin-left: 8px; }
+</style>
+```
+
+```vue
+<!-- frontend/src/views/ArticleDetailView.vue -->
+<template>
+  <AppLayout>
+    <div class="article-page" v-loading="loading">
+      <template v-if="article">
+        <el-button @click="$router.back()" text>← 返回</el-button>
+        <h1>{{ article.title }}</h1>
+        <div class="article-meta">
+          <el-tag size="small">{{ article.category_name }}</el-tag>
+          <span>作者: {{ article.author_name }}</span>
+          <span>浏览: {{ article.view_count }}</span>
+          <span>更新: {{ new Date(article.updated_at).toLocaleDateString() }}</span>
+        </div>
+        <el-divider />
+        <div class="article-content" v-html="renderedContent"></div>
+      </template>
+    </div>
+  </AppLayout>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+import AppLayout from '@/components/AppLayout.vue'
+import { kbApi, type Article } from '@/api/kb'
+
+const route = useRoute()
+const loading = ref(false)
+const article = ref<Article | null>(null)
+
+const renderedContent = computed(() => {
+  // 简单 Markdown 渲染（可后续引入 marked.js）
+  return article.value?.content?.replace(/\n/g, '<br>') || ''
+})
+
+onMounted(async () => {
+  loading.value = true
+  try {
+    const { data } = await kbApi.getArticle(route.params.slug as string)
+    article.value = data
+  } finally { loading.value = false }
+})
+</script>
+
+<style scoped>
+.article-page { max-width: 800px; margin: 0 auto; }
+.article-meta { display: flex; gap: 16px; color: #909399; font-size: 13px; margin-top: 8px; align-items: center; }
+.article-content { line-height: 1.8; font-size: 15px; }
+</style>
+```
+
+- [ ] **Step 9: 提交前端**
+
+```bash
+git add frontend/src/api/kb.ts frontend/src/views/KnowledgeBaseView.vue frontend/src/views/ArticleDetailView.vue frontend/src/router/index.ts
+git commit -m "feat(frontend): add knowledge base pages (list, search, article detail)"
+```
+
+---
+
+## Task 14: 集成测试与最终验证
 
 - [ ] **Step 1: 运行全部后端测试**
 
@@ -2242,7 +3092,13 @@ Task 9 (工单详情页)
     ↓
 Task 10 (菜单 + 通知铃铛)
     ↓
-Task 11 (集成测试)
+Task 11 (工单导入导出)
+    ↓
+Task 12 (工单模板)
+    ↓
+Task 13 (知识库) ← 可与 Task 11/12 并行
+    ↓
+Task 14 (集成测试)
 ```
 
-Task 1-6 为后端，Task 7-10 为前端，Task 11 为验证。后端任务必须顺序执行；前端任务可在后端完成后并行推进。
+Task 1-6 为后端核心，Task 7-10 为前端核心，Task 11-13 为扩展功能，Task 14 为验证。后端任务必须顺序执行；Task 11/12/13 之间互相独立，可并行推进。
