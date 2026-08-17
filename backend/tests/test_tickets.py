@@ -262,6 +262,12 @@ class TestTicketAPI(TestCase):
         ticket.refresh_from_db()
         assert ticket.assignee == handler
 
+    def test_template_api_list(self):
+        from apps.tickets.models import TicketTemplate
+        TicketTemplate.objects.create(name="模板1", ticket_type="fault", fields={})
+        resp = self.client.get("/api/tickets/templates/")
+        assert resp.status_code == 200
+
 from apps.tickets.sla import check_sla_timeouts
 from django.utils import timezone
 from datetime import timedelta
@@ -325,3 +331,21 @@ class TestTicketImportExport(TestCase):
         assert resp.status_code == 200
         assert len(resp.data["preview"]) == 1
         assert resp.data["preview"][0]["title"] == "导入测试工单"
+
+
+
+from apps.tickets.models import TicketTemplate
+
+
+class TestTicketTemplate(TestCase):
+    def test_create_ticket_template(self):
+        template = TicketTemplate.objects.create(
+            name="服务器故障报告",
+            description="用于报告服务器相关故障",
+            ticket_type="fault",
+            fields={"custom_fields": [
+                {"name": "server_ip", "label": "服务器IP", "type": "text", "required": True},
+            ]},
+        )
+        assert template.name == "服务器故障报告"
+        assert len(template.fields["custom_fields"]) == 1

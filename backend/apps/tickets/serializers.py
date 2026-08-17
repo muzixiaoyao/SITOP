@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     Ticket, TicketFlow, TicketNode, SLAPolicy,
-    TicketTransition, TicketComment, TicketAttachment, Notification,
+    TicketTransition, TicketComment, TicketAttachment, Notification, TicketTemplate,
 )
 
 
@@ -112,3 +112,9 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = ["id", "type", "title", "content", "ticket", "is_read", "created_at"]
+
+
+class TicketTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TicketTemplate
+        fields = "__all__"

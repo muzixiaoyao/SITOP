@@ -4,13 +4,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Q
 from apps.accounts.permissions import WriteRequiresOperatorOrAbove, IsAdmin
-from .models import Ticket, TicketFlow, SLAPolicy, TicketComment, Notification
+from .models import Ticket, TicketFlow, SLAPolicy, TicketComment, Notification, TicketTemplate
 from .engine import TicketEngine
 from .serializers import (
     TicketListSerializer, TicketDetailSerializer, TicketCreateSerializer,
     TicketFlowSerializer, TicketFlowCreateSerializer,
     SLAPolicySerializer, TicketCommentSerializer, TicketTransitionSerializer,
-    NotificationSerializer,
+    NotificationSerializer, TicketTemplateSerializer,
 )
 
 
@@ -238,3 +238,20 @@ class TicketImportConfirmView(APIView):
         count = confirm_import(preview, get_tenant(request), request.user)
         cache.delete(f"ticket_import:{session_id}")
         return Response({"imported": count})
+
+
+class TicketTemplateListView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TicketTemplateSerializer
+
+    def get_queryset(self):
+        qs = TicketTemplate.objects.filter(is_active=True)
+        if self.request.method == "POST":
+            return TicketTemplate.objects.all()
+        return qs
+
+
+class TicketTemplateDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+    serializer_class = TicketTemplateSerializer
+    queryset = TicketTemplate.objects.all()

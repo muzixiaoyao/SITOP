@@ -213,3 +213,25 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"[{self.type}] {self.title}"
+
+
+class TicketTemplate(models.Model):
+    """工单模板（预填表单）"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    ticket_type = models.CharField(
+        max_length=20,
+        choices=[("fault", "故障"), ("request", "需求"), ("internal", "内部请求"), ("change", "变更")],
+    )
+    fields = models.JSONField(default=dict, blank=True, help_text="自定义字段定义")
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "-created_at"]
+        verbose_name = "工单模板"
+
+    def __str__(self):
+        return self.name

@@ -16,4 +16,6 @@ urlpatterns = [
     path("export/", views.TicketExportView.as_view(), name="ticket-export"),
     path("import/", views.TicketImportView.as_view(), name="ticket-import"),
     path("import/confirm/", views.TicketImportConfirmView.as_view(), name="ticket-import-confirm"),
+    path("templates/", views.TicketTemplateListView.as_view(), name="ticket-template-list"),
+    path("templates/<uuid:pk>/", views.TicketTemplateDetailView.as_view(), name="ticket-template-detail"),
 ]
