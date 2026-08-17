@@ -1,15 +1,9 @@
-FROM docker.m.daocloud.io/python:3.12-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# 使用阿里云 apt 镜像加速（避免 deb.debian.org 国外源慢）
-RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
-    && sed -i 's|security.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources || true
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Install gcc for cryptography compilation (skip apt-get update to avoid CI hang)
+RUN apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
 COPY requirements.txt .
