@@ -261,3 +261,31 @@ class TestTicketAPI(TestCase):
         assert resp.status_code == 200
         ticket.refresh_from_db()
         assert ticket.assignee == handler
+
+from apps.tickets.sla import check_sla_timeouts
+from django.utils import timezone
+from datetime import timedelta
+
+
+class TestSLA(TestCase):
+    def test_sla_warning_at_80_percent(self):
+        tenant = Tenant.objects.create(name="SLA测试")
+        user = User.objects.create_user(username="sla_user", password="pass", tenant=tenant, role="operator")
+        policy = SLAPolicy.objects.create(
+            name="紧急SLA", priority="critical",
+            response_minutes=60, resolve_minutes=240,
+            escalation_rules={},
+        )
+        flow = TicketFlow.objects.create(name="流程", ticket_type="fault")
+        node = TicketNode.objects.create(flow=flow, name="受理", order=1, role_required="operator")
+        ticket = Ticket.objects.create(
+            tenant=tenant, ticket_no="TK-SLA-0001", title="SLA测试",
+            type="fault", priority="critical", status="pending",
+            current_node=node, submitter=user, sla_policy=policy,
+        )
+        # 手动设置 created_at 为 50 分钟前（超过 80% 的 60 分钟时限）
+        Ticket.objects.filter(pk=ticket.pk).update(
+            created_at=timezone.now() - timedelta(minutes=50)
+        )
+        check_sla_timeouts()
+        assert Notification.objects.filter(user=user, type="sla_warning").exists()
